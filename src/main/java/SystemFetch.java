@@ -14,11 +14,35 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
+import com.williamcallahan.tui4j.compat.bubbletea.Command;
+import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.Message;
+import com.williamcallahan.tui4j.compat.bubbletea.Model;
+import com.williamcallahan.tui4j.compat.bubbletea.Program;
+import com.williamcallahan.tui4j.compat.bubbletea.ProgramException;
+import com.williamcallahan.tui4j.compat.bubbletea.QuitMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
+import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
+import com.williamcallahan.tui4j.compat.lipgloss.Style;
+import com.williamcallahan.tui4j.compat.lipgloss.color.Color;
 
 /*
- * Prints processor, memory, PCI, and USB information from a Linux system.
+ * Interactive processor, memory, PCI, and USB system information for Linux.
  */
-public class SystemFetch {
+public class SystemFetch implements Model {
+
+    /* Report sections displayed as tabs in the interactive interface. */
+    private static final String[] TABS = {"Processor", "Memory", "PCI", "USB"};
+    private static final int MIN_TERMINAL_WIDTH = 40;
+    private static final int MIN_TERMINAL_HEIGHT = 7;
+
+    /* Lipgloss styles distinguish the application title and selected tab. */
+    private static final Style ACTIVE_TAB = Style.newStyle()
+        .foreground(Color.color("205"))
+        .bold(true);
+    private static final Style TITLE = Style.newStyle()
+        .foreground(Color.color("39"))
+        .bold(true);
 
     /* Cumulative busy and idle CPU ticks read from /proc/stat. */
     private record Cpu(long busy, long idle) {}
@@ -41,7 +65,7 @@ public class SystemFetch {
     /* A vendor name and the device/product names belonging to that vendor. */
     private record Vendor(String name, Map<Integer, String> devices) {}
 
-    /* Loads hardware-ID databases, gathers system information, and prints the report. */
+    /* Loads hardware IDs and system data, then runs the interactive or text report. */
     public static void main(String[] args)
         throws IOException, InterruptedException {
         Map<Integer, Vendor> pciNames = loadIds(
@@ -53,14 +77,47 @@ public class SystemFetch {
             "https://raw.githubusercontent.com/vcrhonek/hwdata/master/usb.ids"
         );
 
-        printProcessor();
-        printMemory();
-
         List<Pci> pci = readPci(pciNames);
         List<Usb> usb = readUsb(usbNames);
-        printPci(pci);
-        printUsb(usb);
-        printAnalysis(pci);
+        List<String> sections = List.of(
+            processorInfo(),
+            memoryInfo(),
+            pciInfo(pci),
+            usbInfo(usb)
+        );
+
+        if (System.console() == null || "dumb".equals(System.getenv("TERM"))) {
+            printPlainReport(sections);
+            return;
+        }
+        try {
+            new Program(new SystemFetch(sections)).withAltScreen().run();
+        } catch (ProgramException e) {
+            System.err.println(
+                "Interactive terminal unavailable; printing plain-text report."
+            );
+            printPlainReport(sections);
+        }
+    }
+
+    /* Prints all sections sequentially when a full-screen terminal is unavailable. */
+    private static void printPlainReport(List<String> sections) {
+        for (int i = 0; i < sections.size(); i++) {
+            System.out.println("\n" + TABS[i]);
+            System.out.println(sections.get(i));
+        }
+    }
+
+    /* Current report content and terminal navigation state. */
+    private final List<String> sections;
+    private int selectedTab;
+    private int terminalWidth = 80;
+    private int terminalHeight = 24;
+    private int scroll;
+
+    /* Retains the gathered report for the duration of the TUI session. */
+    private SystemFetch(List<String> sections) {
+        this.sections = sections;
     }
 
     /*
@@ -145,10 +202,8 @@ public class SystemFetch {
         return vendors;
     }
 
-    /*
-      //Reads the processor model and measures each logical CPU over a one-second interval.
-     */
-    private static void printProcessor()
+    /* Reads the processor model and measures each logical CPU over a one-second interval. */
+    private static String processorInfo()
         throws IOException, InterruptedException {
         String model = "Unknown";
         int cpus = 0;
@@ -161,16 +216,16 @@ public class SystemFetch {
                 model = line.split(":", 2)[1].trim();
             }
         }
-        System.out.println("\nProcessor");
-        System.out.println("  Model: " + model);
-        System.out.println("  Logical CPU cores: " + cpus);
+        StringBuilder output = new StringBuilder();
+        output.append("Model: ").append(model).append('\n');
+        output.append("Logical CPU cores: ").append(cpus).append('\n');
 
         Map<Integer, Cpu> before = cpuTimes();
         Thread.sleep(1000);
         Map<Integer, Cpu> after = cpuTimes();
         long totalBusy = 0,
             total = 0;
-        System.out.println("  Load per core:");
+        output.append("Load per core:\n");
         for (int id : before.keySet().stream().sorted().toList()) {
             Cpu start = before.get(id),
                 end = after.get(id);
@@ -179,22 +234,23 @@ public class SystemFetch {
             long busy = end.busy() - start.busy();
             long elapsed = busy + end.idle() - start.idle();
             if (elapsed <= 0) continue;
-            System.out.printf(
+            output.append(String.format(
                 Locale.ROOT,
-                "    CPU %d: %.1f%%%n",
+                "  CPU %d: %.1f%%%n",
                 id,
                 (busy * 100.0) / elapsed
-            );
+            ));
             totalBusy += busy;
             total += elapsed;
         }
         if (total > 0) {
-            System.out.printf(
+            output.append(String.format(
                 Locale.ROOT,
-                "  Average: %.1f%%%n",
+                "Average across all logical CPUs: %.1f%%%n",
                 (totalBusy * 100.0) / total
-            );
+            ));
         }
+        return output.toString();
     }
 
     /*
@@ -220,7 +276,7 @@ public class SystemFetch {
     }
 
     /* Reports total and used memory from Linux's /proc/meminfo values, which are in KiB. */
-    private static void printMemory() throws IOException {
+    private static String memoryInfo() throws IOException {
         Map<String, Long> memory = new HashMap<>();
         for (String line : Files.readAllLines(Path.of("/proc/meminfo"))) {
             String[] fields = line.split("\\s+");
@@ -233,15 +289,10 @@ public class SystemFetch {
         // /proc/meminfo values are in KiB; MemAvailable estimates reclaimable memory.
         long used =
             total - memory.getOrDefault("MemAvailable", memory.get("MemFree"));
-        System.out.println("\nMemory");
-        System.out.printf(
+        return String.format(
             Locale.ROOT,
-            "  Total: %.1f GiB%n",
-            total / 1048576.0
-        );
-        System.out.printf(
-            Locale.ROOT,
-            "  Used: %.1f GiB (%.1f%%)%n",
+            "Total: %.1f GiB%nUsed: %.1f GiB (%.1f%%)",
+            total / 1048576.0,
             used / 1048576.0,
             (used * 100.0) / total
         );
@@ -338,42 +389,39 @@ public class SystemFetch {
         return String.format(Locale.ROOT, "0x%04x", id);
     }
 
-    /* Prints every PCI device with its address, IDs, resolved names, and class code. */
-    private static void printPci(List<Pci> devices) {
-        System.out.println("\nPCI devices (" + devices.size() + ")");
-        if (devices.isEmpty()) System.out.println("  No PCI devices found.");
+    /* Builds the PCI device list shown on the PCI tab. */
+    private static String pciInfo(List<Pci> devices) {
+        StringBuilder output = new StringBuilder();
+        output.append("PCI devices (").append(devices.size()).append(")\n");
+        if (devices.isEmpty()) output.append("No PCI devices found.\n");
         for (Pci d : devices) {
-            System.out.printf(
-                "  %02x:%02x.%x  %s (%s), %s (%s), class %06x%n",
-                d.bus(),
-                d.device(),
-                d.function(),
-                d.vendorName(),
-                hex(d.vendor()),
-                d.name(),
-                hex(d.id()),
-                d.deviceClass()
-            );
+            output.append(String.format(
+                Locale.ROOT,
+                "%02x:%02x.%x  %s (%s), %s (%s), class %06x%n",
+                d.bus(), d.device(), d.function(), d.vendorName(), hex(d.vendor()),
+                d.name(), hex(d.id()), d.deviceClass()
+            ));
         }
+        appendPciAnalysis(output, devices);
+        return output.toString();
     }
 
-    /* Prints every USB device, explicitly reporting when the system has none. */
-    private static void printUsb(List<Usb> devices) {
-        System.out.println("\nUSB devices (" + devices.size() + ")");
-        if (devices.isEmpty()) System.out.println("  No USB devices found.");
+    /* Builds the USB device list and handles systems without USB devices. */
+    private static String usbInfo(List<Usb> devices) {
+        StringBuilder output = new StringBuilder();
+        output.append("USB devices (").append(devices.size()).append(")\n");
+        if (devices.isEmpty()) output.append("No USB devices found.\n");
         for (Usb d : devices) {
-            System.out.printf(
-                "  %s (%s), %s (%s)%n",
-                d.vendorName(),
-                hex(d.vendor()),
-                d.name(),
-                hex(d.id())
-            );
+            output.append(String.format(
+                "%s (%s), %s (%s)%n",
+                d.vendorName(), hex(d.vendor()), d.name(), hex(d.id())
+            ));
         }
+        return output.toString();
     }
 
-    /* Summarizes PCI vendors and prints vendor-name and numeric-address orderings. */
-    private static void printAnalysis(List<Pci> devices) {
+    /* Appends PCI vendor counts and both requested orderings to the PCI tab. */
+    private static void appendPciAnalysis(StringBuilder output, List<Pci> devices) {
         Comparator<Pci> address = Comparator.comparingInt(Pci::bus)
             .thenComparingInt(Pci::device)
             .thenComparingInt(Pci::function);
@@ -381,13 +429,13 @@ public class SystemFetch {
             String.CASE_INSENSITIVE_ORDER
         );
         for (Pci d : devices) counts.merge(d.vendorName(), 1, Integer::sum);
-        System.out.println("\nPCI devices per vendor");
+        output.append("\nDevices per vendor:\n");
         counts.forEach((vendor, count) ->
-            System.out.println("  " + vendor + ": " + count)
+            output.append("  ").append(vendor).append(": ").append(count).append('\n')
         );
 
         // Use bus, device, and function as deterministic tie-breakers for vendor ordering.
-        System.out.println("\nPCI sorted by vendor");
+        output.append("\nSorted alphabetically by vendor:\n");
         devices
             .stream()
             .sorted(
@@ -396,19 +444,124 @@ public class SystemFetch {
                     String.CASE_INSENSITIVE_ORDER
                 ).thenComparing(address)
             )
-            .forEach(SystemFetch::printAddress);
-        System.out.println("\nPCI sorted by bus, device, and function");
-        devices.stream().sorted(address).forEach(SystemFetch::printAddress);
+            .forEach(d -> appendAddress(output, d));
+        output.append("\nSorted by bus, device, and function:\n");
+        devices.stream().sorted(address).forEach(d -> appendAddress(output, d));
     }
 
-    /* Prints one PCI device's name and bus:device.function address. */
-    private static void printAddress(Pci d) {
-        System.out.printf(
-            "  %s at %02x:%02x.%x%n",
-            d.vendorName() + " " + d.name(),
-            d.bus(),
-            d.device(),
-            d.function()
-        );
+    /* Appends one PCI device and its address to an analysis section. */
+    private static void appendAddress(StringBuilder output, Pci d) {
+        output.append(String.format(
+            Locale.ROOT,
+            "  %s %s at %02x:%02x.%x%n",
+            d.vendorName(), d.name(), d.bus(), d.device(), d.function()
+        ));
+    }
+
+    /* No startup command is needed because the report is gathered before the TUI starts. */
+    @Override
+    public Command init() {
+        return null;
+    }
+
+    /* Handles terminal resizing, tab navigation, scrolling, and quit input. */
+    @Override
+    public UpdateResult<? extends Model> update(Message message) {
+        if (message instanceof WindowSizeMessage size) {
+            terminalWidth = Math.max(1, size.width());
+            terminalHeight = Math.max(1, size.height());
+            scroll = Math.min(scroll, maxScroll());
+            return UpdateResult.from(this);
+        }
+        if (!(message instanceof KeyPressMessage key)) {
+            return UpdateResult.from(this);
+        }
+
+        switch (key.key()) {
+            case "q", "Q", "esc", "ctrl+c" -> {
+                return UpdateResult.from(this, QuitMessage::new);
+            }
+            case "right", "l", "tab" -> selectTab((selectedTab + 1) % TABS.length);
+            case "left", "h" -> selectTab((selectedTab + TABS.length - 1) % TABS.length);
+            case "down", "j" -> scroll = Math.min(maxScroll(), scroll + 1);
+            case "up", "k" -> scroll = Math.max(0, scroll - 1);
+            case "pagedown", "pgdown", "ctrl+d" ->
+                scroll = Math.min(maxScroll(), scroll + pageSize());
+            case "pageup", "pgup", "ctrl+u" ->
+                scroll = Math.max(0, scroll - pageSize());
+            case "home" -> scroll = 0;
+            case "end" -> scroll = maxScroll();
+            default -> {
+                return UpdateResult.from(this);
+            }
+        }
+        return UpdateResult.from(this);
+    }
+
+    /* Renders the active report section within the current terminal dimensions. */
+    @Override
+    public String view() {
+        if (
+            terminalWidth < MIN_TERMINAL_WIDTH ||
+            terminalHeight < MIN_TERMINAL_HEIGHT
+        ) {
+            return TITLE.render("System Fetch") + "\n"
+                + "Terminal too small. Resize to at least "
+                + MIN_TERMINAL_WIDTH
+                + "x"
+                + MIN_TERMINAL_HEIGHT
+                + ".\n"
+                + "Press q to quit.";
+        }
+
+        StringBuilder output = new StringBuilder();
+        output.append(TITLE.render("System Fetch")).append('\n');
+        for (int i = 0; i < TABS.length; i++) {
+            String tab = " " + TABS[i] + " ";
+            output.append(i == selectedTab ? ACTIVE_TAB.render("[" + tab + "]") : "[" + tab + "]");
+            output.append(i == TABS.length - 1 ? '\n' : ' ');
+        }
+
+        List<String> lines = wrappedLines();
+        int visibleLines = Math.max(1, terminalHeight - 5);
+        int start = Math.min(scroll, Math.max(0, lines.size() - visibleLines));
+        int end = Math.min(lines.size(), start + visibleLines);
+        for (int i = start; i < end; i++) {
+            output.append(lines.get(i)).append('\n');
+        }
+        output.append("\n←/→ or Tab: switch tabs | ↑/↓: scroll | q: quit");
+        return output.toString();
+    }
+
+    /* Switches tabs and resets the scroll position for the newly selected section. */
+    private void selectTab(int tab) {
+        selectedTab = tab;
+        scroll = 0;
+    }
+
+    /* Leaves room on screen for the title, tabs, and key-help line. */
+    private int pageSize() {
+        return Math.max(1, terminalHeight - 7);
+    }
+
+    /* Computes the scroll limit from the active section and terminal size. */
+    private int maxScroll() {
+        return Math.max(0, wrappedLines().size() - Math.max(1, terminalHeight - 5));
+    }
+
+    /* Wraps report lines so narrow terminals can still display every field. */
+    private List<String> wrappedLines() {
+        int width = Math.max(1, terminalWidth - 1);
+        List<String> result = new ArrayList<>();
+        for (String line : sections.get(selectedTab).split("\\R", -1)) {
+            int start = 0;
+            while (line.codePointCount(start, line.length()) > width) {
+                int end = line.offsetByCodePoints(start, width);
+                result.add(line.substring(start, end));
+                start = end;
+            }
+            result.add(line.substring(start));
+        }
+        return result;
     }
 }
