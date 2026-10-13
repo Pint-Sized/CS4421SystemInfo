@@ -20,9 +20,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
@@ -70,6 +72,14 @@ public class SystemFetch implements Model {
 
     /* Cumulative busy and idle CPU ticks read from /proc/stat. */
     private record Cpu(long busy, long idle) {}
+
+    /* Processor model, logical CPU count, and physical-core mapping from /proc/cpuinfo. */
+    private record CpuInfo(
+        String model,
+        int logicalCpus,
+        Map<Integer, String> coreByCpu,
+        boolean topologyAvailable
+    ) {}
 
     /* A PCI function's address, IDs, class, and resolved names. */
     private record Pci(
@@ -228,30 +238,34 @@ public class SystemFetch implements Model {
         return vendors;
     }
 
-    /* Reads the processor model and measures each logical CPU over a one-second interval. */
+    /* Reads processor topology and measures load per logical CPU and physical core. */
     private static String processorInfo()
         throws IOException, InterruptedException {
-        String model = "Unknown";
-        int cpus = 0;
-        for (String line : Files.readAllLines(Path.of("/proc/cpuinfo"))) {
-            if (line.startsWith("processor")) cpus++;
-            if (
-                model.equals("Unknown") &&
-                (line.startsWith("model name") || line.startsWith("Hardware"))
-            ) {
-                model = line.split(":", 2)[1].trim();
-            }
-        }
+        CpuInfo info = readCpuInfo();
         StringBuilder output = new StringBuilder();
-        output.append("Model: ").append(model).append('\n');
-        output.append("Logical CPU cores: ").append(cpus).append('\n');
+        output.append("Model: ").append(info.model()).append('\n');
+        output.append("Logical CPU cores: ").append(info.logicalCpus()).append('\n');
+        if (info.topologyAvailable()) {
+            output.append("Physical CPU cores: ")
+                .append(info.coreByCpu().values().stream().distinct().count());
+            if (info.coreByCpu().size() < info.logicalCpus()) {
+                output.append(
+                    " (topology incomplete; unmapped logical CPUs are counted individually)"
+                );
+            }
+            output.append('\n');
+        } else {
+            output.append(
+                "Physical CPU core topology unavailable; load is grouped per logical CPU.\n"
+            );
+        }
 
         Map<Integer, Cpu> before = cpuTimes();
         Thread.sleep(1000);
         Map<Integer, Cpu> after = cpuTimes();
-        long totalBusy = 0,
-            total = 0;
-        output.append("Load per core:\n");
+        long logicalBusy = 0, logicalElapsed = 0;
+        Map<String, Cpu> physicalCoreTimes = new TreeMap<>();
+        output.append("Load per logical CPU:\n");
         for (int id : before.keySet().stream().sorted().toList()) {
             Cpu start = before.get(id),
                 end = after.get(id);
@@ -269,20 +283,121 @@ public class SystemFetch implements Model {
                     (busy * 100.0) / elapsed
                 )
             );
-            totalBusy += busy;
-            total += elapsed;
+            logicalBusy += busy;
+            logicalElapsed += elapsed;
+            String core = info.coreByCpu().get(id);
+            if (core != null) {
+                physicalCoreTimes.merge(
+                    core,
+                    new Cpu(busy, elapsed - busy),
+                    (first, second) ->
+                        new Cpu(first.busy() + second.busy(), first.idle() + second.idle())
+                );
+            }
         }
-        if (total > 0) {
+        if (logicalElapsed > 0) {
             // Aggregate counters weight each CPU by elapsed ticks during the sample.
             output.append(
                 String.format(
                     Locale.ROOT,
                     "Average across all logical CPUs: %.1f%%%n",
-                    (totalBusy * 100.0) / total
+                    (logicalBusy * 100.0) / logicalElapsed
                 )
             );
         }
+
+        if (info.topologyAvailable()) {
+            long coreBusy = 0, coreElapsed = 0;
+            output.append("Load per physical core:\n");
+            for (Map.Entry<String, Cpu> entry : physicalCoreTimes.entrySet()) {
+                Cpu times = entry.getValue();
+                long elapsed = times.busy() + times.idle();
+                if (elapsed <= 0) continue;
+                output.append(
+                    String.format(
+                        Locale.ROOT,
+                        "  %s: %.1f%%%n",
+                        entry.getKey(),
+                        times.busy() * 100.0 / elapsed
+                    )
+                );
+                coreBusy += times.busy();
+                coreElapsed += elapsed;
+            }
+            if (coreElapsed > 0) {
+                output.append(
+                    String.format(
+                        Locale.ROOT,
+                        "Average across all physical cores: %.1f%%%n",
+                        coreBusy * 100.0 / coreElapsed
+                    )
+                );
+            }
+        }
         return output.toString();
+    }
+
+    /* Reads each /proc/cpuinfo processor block and groups logical CPUs by socket/core IDs. */
+    private static CpuInfo readCpuInfo() throws IOException {
+        String model = "Unknown";
+        int logicalCpus = 0;
+        Map<Integer, String> coreByCpu = new HashMap<>();
+        Set<Integer> logicalCpuIds = new HashSet<>();
+        Integer processor = null, physicalId = null, coreId = null;
+
+        for (String line : Files.readAllLines(Path.of("/proc/cpuinfo"))) {
+            if (line.isBlank()) {
+                addCoreMapping(coreByCpu, processor, physicalId, coreId);
+                processor = null;
+                physicalId = null;
+                coreId = null;
+                continue;
+            }
+            String[] fields = line.split(":", 2);
+            if (fields.length != 2) continue;
+            String key = fields[0].trim(), value = fields[1].trim();
+            if (key.equals("processor")) {
+                processor = Integer.parseInt(value);
+                logicalCpus++;
+                logicalCpuIds.add(processor);
+            } else if (key.equals("physical id")) {
+                physicalId = Integer.parseInt(value);
+            } else if (key.equals("core id")) {
+                coreId = Integer.parseInt(value);
+            } else if (
+                model.equals("Unknown") &&
+                (key.equals("model name") || key.equals("Hardware"))
+            ) {
+                model = value;
+            }
+        }
+        addCoreMapping(coreByCpu, processor, physicalId, coreId);
+
+        if (logicalCpus == 0) {
+            logicalCpus = Runtime.getRuntime().availableProcessors();
+            for (int id = 0; id < logicalCpus; id++) {
+                logicalCpuIds.add(id);
+            }
+        }
+        boolean topologyAvailable = !coreByCpu.isEmpty();
+        for (int id : logicalCpuIds) {
+            if (!coreByCpu.containsKey(id)) {
+                // Do not guess physical topology for CPUs without socket/core metadata.
+                coreByCpu.put(id, "CPU " + id);
+            }
+        }
+        return new CpuInfo(model, logicalCpus, coreByCpu, topologyAvailable);
+    }
+
+    /* Uses socket plus core ID so identical core IDs on separate sockets stay distinct. */
+    private static void addCoreMapping(
+        Map<Integer, String> coreByCpu,
+        Integer processor,
+        Integer physicalId,
+        Integer coreId
+    ) {
+        if (processor == null || physicalId == null || coreId == null) return;
+        coreByCpu.put(processor, "Socket " + physicalId + ", core " + coreId);
     }
 
     /*
@@ -294,16 +409,16 @@ public class SystemFetch implements Model {
             String[] fields = line.trim().split("\\s+");
             if (!fields[0].matches("cpu\\d+")) continue;
             int id = Integer.parseInt(fields[0].substring(3));
-            long total = 0;
-            // Sum user, system, idle, and other counters to get all elapsed CPU ticks.
-            for (int i = 1; i < fields.length; i++) total += Long.parseLong(
-                fields[i]
-            );
-            // Include I/O wait in idle time, as Linux does when reporting CPU load.
             long idle = Long.parseLong(fields[4]);
             if (fields.length > 5) idle += Long.parseLong(fields[5]);
-            // Store busy and idle separately so samples can be differenced later.
-            result.put(id, new Cpu(total - idle, idle));
+            long busy = Long.parseLong(fields[1])
+                + Long.parseLong(fields[2])
+                + Long.parseLong(fields[3])
+                + Long.parseLong(fields[6])
+                + Long.parseLong(fields[7]);
+            if (fields.length > 8) busy += Long.parseLong(fields[8]);
+            // Guest ticks are already included in user/nice, so do not count them again.
+            result.put(id, new Cpu(busy, idle));
         }
         return result;
     }

@@ -1,9 +1,11 @@
 # System Fetch
 
 A Linux system-information program written in Java 21. It reports the processor
-model, logical CPU count and measured per-CPU load, memory usage, PCI and USB
-devices, and resolved vendor/device names. The PCI tab also includes devices
-sorted by vendor and address, plus a device-count summary per vendor.
+model, logical and physical CPU counts, measured load per logical CPU and
+physical core, memory usage, PCI and USB devices, and resolved vendor/device
+names. The PCI tab also includes devices sorted by vendor and address, plus a
+device-count summary per vendor. When Linux does not expose physical topology,
+the program reports that limitation and shows load per logical CPU instead.
 
 In an interactive terminal, TUI4J presents the report in four styled tabs:
 Processor, Memory, PCI, and USB. Without an interactive terminal, it prints all
