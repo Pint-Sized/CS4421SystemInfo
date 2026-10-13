@@ -8,12 +8,14 @@
     <artifactId>system-fetch</artifactId>
     <version>1.0-SNAPSHOT</version>
 
+    <!-- TUI4J uses Java 21 APIs and provides the Bubble Tea/Lipgloss terminal UI. -->
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
+        <!-- Supplies the interactive tabbed interface and terminal styling. -->
         <dependency>
             <groupId>com.williamcallahan</groupId>
             <artifactId>tui4j</artifactId>
@@ -23,6 +25,7 @@
 
     <build>
         <plugins>
+            <!-- Allows the documented `mvn compile exec:java` launch command. -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>

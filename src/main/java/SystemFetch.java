@@ -33,16 +33,33 @@ public class SystemFetch implements Model {
 
     /* Report sections displayed as tabs in the interactive interface. */
     private static final String[] TABS = {"Processor", "Memory", "PCI", "USB"};
+    /* Below these dimensions the tab rail and report cannot be read reliably. */
     private static final int MIN_TERMINAL_WIDTH = 40;
     private static final int MIN_TERMINAL_HEIGHT = 7;
 
-    /* Lipgloss styles distinguish the application title and selected tab. */
+    /* 256-color Lipgloss styles distinguish the active tab, headings, and labels. */
     private static final Style ACTIVE_TAB = Style.newStyle()
-        .foreground(Color.color("205"))
-        .bold(true);
+        .foreground(Color.color("15"))
+        .background(Color.color("99"))
+        .bold(true)
+        .padding(0, 1);
+    private static final Style INACTIVE_TAB = Style.newStyle()
+        .foreground(Color.color("245"))
+        .bold(true)
+        .padding(0, 1);
     private static final Style TITLE = Style.newStyle()
         .foreground(Color.color("39"))
         .bold(true);
+    private static final Style SECTION_TITLE = Style.newStyle()
+        .foreground(Color.color("205"))
+        .bold(true);
+    private static final Style LABEL = Style.newStyle()
+        .foreground(Color.color("43"))
+        .bold(true);
+    private static final Style ACCENT = Style.newStyle()
+        .foreground(Color.color("99"));
+    private static final Style HELP = Style.newStyle()
+        .foreground(Color.color("245"));
 
     /* Cumulative busy and idle CPU ticks read from /proc/stat. */
     private record Cpu(long busy, long idle) {}
@@ -150,6 +167,7 @@ public class SystemFetch implements Model {
                 request,
                 HttpResponse.BodyHandlers.ofString()
             );
+            // Reject error pages and empty responses before caching them as ID databases.
             if (
                 response.statusCode() != 200 ||
                 !response.body().matches("(?s).*?\\n?[0-9a-fA-F]{4}\\s+\\S.*")
@@ -187,6 +205,7 @@ public class SystemFetch implements Model {
             String trimmed = line.strip();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
             String[] parts = trimmed.split("\\s+", 2);
+            // Vendor and device entries both start with four hexadecimal digits.
             if (
                 parts.length < 2 || !parts[0].matches("[0-9a-fA-F]{4}")
             ) continue;
@@ -234,6 +253,7 @@ public class SystemFetch implements Model {
             long busy = end.busy() - start.busy();
             long elapsed = busy + end.idle() - start.idle();
             if (elapsed <= 0) continue;
+            // Divide busy ticks by all elapsed ticks for this CPU's utilization percentage.
             output.append(String.format(
                 Locale.ROOT,
                 "  CPU %d: %.1f%%%n",
@@ -244,6 +264,7 @@ public class SystemFetch implements Model {
             total += elapsed;
         }
         if (total > 0) {
+            // Aggregate counters weight each CPU by elapsed ticks during the sample.
             output.append(String.format(
                 Locale.ROOT,
                 "Average across all logical CPUs: %.1f%%%n",
@@ -270,6 +291,7 @@ public class SystemFetch implements Model {
             // Include I/O wait in idle time, as Linux does when reporting CPU load.
             long idle = Long.parseLong(fields[4]);
             if (fields.length > 5) idle += Long.parseLong(fields[5]);
+            // Store busy and idle separately so samples can be differenced later.
             result.put(id, new Cpu(total - idle, idle));
         }
         return result;
@@ -317,6 +339,7 @@ public class SystemFetch implements Model {
                         Integer.parseInt(address[offset + 2], 16),
                         readHex(path.resolve("vendor")),
                         readHex(path.resolve("device")),
+                        // PCI class attributes encode base class, subclass, and programming interface.
                         readHex(path.resolve("class")),
                         vendorName(names, readHex(path.resolve("vendor"))),
                         deviceName(
@@ -515,22 +538,63 @@ public class SystemFetch implements Model {
         }
 
         StringBuilder output = new StringBuilder();
-        output.append(TITLE.render("System Fetch")).append('\n');
+        output.append(TITLE.render("SYSTEM FETCH"))
+            .append("  ")
+            .append(HELP.render("LINUX SYSTEM OVERVIEW"))
+            .append('\n');
+        output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
+        // Short labels keep the complete tab row readable in narrower terminals.
+        String[] shortTabs = {"CPU", "RAM", "PCI", "USB"};
         for (int i = 0; i < TABS.length; i++) {
-            String tab = " " + TABS[i] + " ";
-            output.append(i == selectedTab ? ACTIVE_TAB.render("[" + tab + "]") : "[" + tab + "]");
+            String tab = terminalWidth < 64
+                ? shortTabs[i]
+                : TABS[i].toUpperCase(Locale.ROOT);
+            output.append(i == selectedTab
+                    ? ACTIVE_TAB.render(" " + tab + " ")
+                    : INACTIVE_TAB.render(" " + tab + " "));
             output.append(i == TABS.length - 1 ? '\n' : ' ');
         }
+        output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
+        output.append(SECTION_TITLE.render(TABS[selectedTab].toUpperCase(Locale.ROOT)))
+            .append('\n');
 
         List<String> lines = wrappedLines();
-        int visibleLines = Math.max(1, terminalHeight - 5);
+        // Reserve rows for the title, tab rail, section heading, dividers, and key help.
+        int visibleLines = Math.max(1, terminalHeight - 8);
         int start = Math.min(scroll, Math.max(0, lines.size() - visibleLines));
         int end = Math.min(lines.size(), start + visibleLines);
         for (int i = start; i < end; i++) {
-            output.append(lines.get(i)).append('\n');
+            output.append(styleReportLine(lines.get(i))).append('\n');
         }
-        output.append("\n←/→ or Tab: switch tabs | ↑/↓: scroll | q: quit");
+        output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
+        output.append(HELP.render(" ←/→ or Tab switch tabs   ↑/↓ scroll   q quit"));
         return output.toString();
+    }
+
+    /* Highlights headings and labels while leaving device descriptions easy to read. */
+    private static String styleReportLine(String line) {
+        String trimmed = line.trim();
+        // PCI analysis and device-list headings share the same section-title style.
+        if (
+            trimmed.endsWith(":") ||
+            trimmed.startsWith("PCI devices (") ||
+            trimmed.startsWith("USB devices (")
+        ) {
+            return SECTION_TITLE.render(line);
+        }
+        if (trimmed.startsWith("CPU ") && trimmed.contains(":")) {
+            // Highlight the CPU label without changing its measured percentage.
+            int separator = line.indexOf(':');
+            return LABEL.render(line.substring(0, separator + 1))
+                + line.substring(separator + 1);
+        }
+        // Keep short key/value labels distinct from longer device descriptions.
+        int separator = line.indexOf(": ");
+        if (separator > 0 && separator < 32) {
+            return LABEL.render(line.substring(0, separator + 1))
+                + line.substring(separator + 1);
+        }
+        return line;
     }
 
     /* Switches tabs and resets the scroll position for the newly selected section. */
@@ -541,12 +605,13 @@ public class SystemFetch implements Model {
 
     /* Leaves room on screen for the title, tabs, and key-help line. */
     private int pageSize() {
-        return Math.max(1, terminalHeight - 7);
+        return Math.max(1, terminalHeight - 10);
     }
 
     /* Computes the scroll limit from the active section and terminal size. */
     private int maxScroll() {
-        return Math.max(0, wrappedLines().size() - Math.max(1, terminalHeight - 5));
+        // Match the reserved rows used to calculate the visible content area.
+        return Math.max(0, wrappedLines().size() - Math.max(1, terminalHeight - 8));
     }
 
     /* Wraps report lines so narrow terminals can still display every field. */
@@ -555,6 +620,7 @@ public class SystemFetch implements Model {
         List<String> result = new ArrayList<>();
         for (String line : sections.get(selectedTab).split("\\R", -1)) {
             int start = 0;
+            // Count Unicode code points so wrapping does not split a multi-byte character.
             while (line.codePointCount(start, line.length()) > width) {
                 int end = line.offsetByCodePoints(start, width);
                 result.add(line.substring(start, end));
