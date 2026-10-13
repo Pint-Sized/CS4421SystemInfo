@@ -1,26 +1,30 @@
 # System Fetch
 
-A Java 21 system fetch for Linux with an interactive TUI4J terminal interface.
-It reports processor details and per-logical-CPU load, memory usage, PCI and USB
-devices, resolved vendor/device names, and PCI sorting and vendor-count summaries.
-PCI and USB entries are collected into Java lists. When no USB devices are
-present, the program reports that explicitly.
+A Linux system-information program written in Java 21. It reports the processor
+model, logical CPU count and measured per-CPU load, memory usage, PCI and USB
+devices, and resolved vendor/device names. The PCI tab also includes devices
+sorted by vendor and address, plus a device-count summary per vendor.
 
-Build and run from the project directory:
+In an interactive terminal, TUI4J presents the report in four styled tabs:
+Processor, Memory, PCI, and USB. Without an interactive terminal, it prints all
+four sections as plain text. USB systems with no detected devices are reported
+explicitly.
+
+Install Java 21 and Maven, then build and run from the project directory:
 
 ```sh
 mvn compile exec:java
 ```
 
 Use the left/right arrow keys or Tab to switch between the Processor, Memory,
-PCI, and USB tabs. Use up/down to scroll a tab, Page Up/Page Down to move by a
-page, and `q` or Escape to quit. If launched without an interactive terminal,
-the program prints all sections as plain text instead. The TUI asks you to
-resize terminals smaller than 40 columns by 7 rows. In an interactive terminal,
-the TUI uses colored tabs, highlighted section labels, and divider lines.
+PCI, and USB tabs. Use up/down to scroll, Page Up/Page Down to move by a page,
+Home/End to jump to the start/end, and `q` or Escape to quit. Resize terminals
+smaller than 40 columns by 7 rows when prompted. The UI wraps report lines to
+fit the terminal.
 
-The program looks for `pci.ids` and `usb.ids` in the project directory, `data/`,
-`ids/`, and common system locations. If either file is missing, it attempts to
-download it into `data/`. Network access is only needed for this first download;
-unknown IDs are printed in hexadecimal if the file cannot be obtained. System
-information is read from Linux `/proc` and `/sys` filesystems.
+Hardware ID databases are searched in the project directory, `data/`, `ids/`,
+and common system locations. Missing `pci.ids` or `usb.ids` files are downloaded
+into `data/` on first run, so network access is needed if no local copy is
+available. If a database cannot be obtained or an ID is not listed, the raw
+hexadecimal ID is shown. System information is read from Linux `/proc` and
+`/sys` filesystems.
