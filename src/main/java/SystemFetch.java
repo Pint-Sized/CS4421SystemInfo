@@ -1,3 +1,14 @@
+import com.williamcallahan.tui4j.compat.bubbletea.Command;
+import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.Message;
+import com.williamcallahan.tui4j.compat.bubbletea.Model;
+import com.williamcallahan.tui4j.compat.bubbletea.Program;
+import com.williamcallahan.tui4j.compat.bubbletea.ProgramException;
+import com.williamcallahan.tui4j.compat.bubbletea.QuitMessage;
+import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
+import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
+import com.williamcallahan.tui4j.compat.lipgloss.Style;
+import com.williamcallahan.tui4j.compat.lipgloss.color.Color;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,17 +25,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
-import com.williamcallahan.tui4j.compat.bubbletea.Command;
-import com.williamcallahan.tui4j.compat.bubbletea.KeyPressMessage;
-import com.williamcallahan.tui4j.compat.bubbletea.Message;
-import com.williamcallahan.tui4j.compat.bubbletea.Model;
-import com.williamcallahan.tui4j.compat.bubbletea.Program;
-import com.williamcallahan.tui4j.compat.bubbletea.ProgramException;
-import com.williamcallahan.tui4j.compat.bubbletea.QuitMessage;
-import com.williamcallahan.tui4j.compat.bubbletea.UpdateResult;
-import com.williamcallahan.tui4j.compat.bubbletea.WindowSizeMessage;
-import com.williamcallahan.tui4j.compat.lipgloss.Style;
-import com.williamcallahan.tui4j.compat.lipgloss.color.Color;
 
 /*
  * Interactive processor, memory, PCI, and USB system information for Linux.
@@ -32,7 +32,12 @@ import com.williamcallahan.tui4j.compat.lipgloss.color.Color;
 public class SystemFetch implements Model {
 
     /* Report sections displayed as tabs in the interactive interface. */
-    private static final String[] TABS = {"Processor", "Memory", "PCI", "USB"};
+    private static final String[] TABS = {
+        "Processor",
+        "Memory",
+        "PCI",
+        "USB",
+    };
     /* Below these dimensions the tab rail and report cannot be read reliably. */
     private static final int MIN_TERMINAL_WIDTH = 40;
     private static final int MIN_TERMINAL_HEIGHT = 7;
@@ -56,10 +61,12 @@ public class SystemFetch implements Model {
     private static final Style LABEL = Style.newStyle()
         .foreground(Color.color("43"))
         .bold(true);
-    private static final Style ACCENT = Style.newStyle()
-        .foreground(Color.color("99"));
-    private static final Style HELP = Style.newStyle()
-        .foreground(Color.color("245"));
+    private static final Style ACCENT = Style.newStyle().foreground(
+        Color.color("99")
+    );
+    private static final Style HELP = Style.newStyle().foreground(
+        Color.color("245")
+    );
 
     /* Cumulative busy and idle CPU ticks read from /proc/stat. */
     private record Cpu(long busy, long idle) {}
@@ -254,22 +261,26 @@ public class SystemFetch implements Model {
             long elapsed = busy + end.idle() - start.idle();
             if (elapsed <= 0) continue;
             // Divide busy ticks by all elapsed ticks for this CPU's utilization percentage.
-            output.append(String.format(
-                Locale.ROOT,
-                "  CPU %d: %.1f%%%n",
-                id,
-                (busy * 100.0) / elapsed
-            ));
+            output.append(
+                String.format(
+                    Locale.ROOT,
+                    "  CPU %d: %.1f%%%n",
+                    id,
+                    (busy * 100.0) / elapsed
+                )
+            );
             totalBusy += busy;
             total += elapsed;
         }
         if (total > 0) {
             // Aggregate counters weight each CPU by elapsed ticks during the sample.
-            output.append(String.format(
-                Locale.ROOT,
-                "Average across all logical CPUs: %.1f%%%n",
-                (totalBusy * 100.0) / total
-            ));
+            output.append(
+                String.format(
+                    Locale.ROOT,
+                    "Average across all logical CPUs: %.1f%%%n",
+                    (totalBusy * 100.0) / total
+                )
+            );
         }
         return output.toString();
     }
@@ -418,12 +429,20 @@ public class SystemFetch implements Model {
         output.append("PCI devices (").append(devices.size()).append(")\n");
         if (devices.isEmpty()) output.append("No PCI devices found.\n");
         for (Pci d : devices) {
-            output.append(String.format(
-                Locale.ROOT,
-                "%02x:%02x.%x  %s (%s), %s (%s), class %06x%n",
-                d.bus(), d.device(), d.function(), d.vendorName(), hex(d.vendor()),
-                d.name(), hex(d.id()), d.deviceClass()
-            ));
+            output.append(
+                String.format(
+                    Locale.ROOT,
+                    "%02x:%02x.%x  %s (%s), %s (%s), class %06x%n",
+                    d.bus(),
+                    d.device(),
+                    d.function(),
+                    d.vendorName(),
+                    hex(d.vendor()),
+                    d.name(),
+                    hex(d.id()),
+                    d.deviceClass()
+                )
+            );
         }
         appendPciAnalysis(output, devices);
         return output.toString();
@@ -435,16 +454,24 @@ public class SystemFetch implements Model {
         output.append("USB devices (").append(devices.size()).append(")\n");
         if (devices.isEmpty()) output.append("No USB devices found.\n");
         for (Usb d : devices) {
-            output.append(String.format(
-                "%s (%s), %s (%s)%n",
-                d.vendorName(), hex(d.vendor()), d.name(), hex(d.id())
-            ));
+            output.append(
+                String.format(
+                    "%s (%s), %s (%s)%n",
+                    d.vendorName(),
+                    hex(d.vendor()),
+                    d.name(),
+                    hex(d.id())
+                )
+            );
         }
         return output.toString();
     }
 
     /* Appends PCI vendor counts and both requested orderings to the PCI tab. */
-    private static void appendPciAnalysis(StringBuilder output, List<Pci> devices) {
+    private static void appendPciAnalysis(
+        StringBuilder output,
+        List<Pci> devices
+    ) {
         Comparator<Pci> address = Comparator.comparingInt(Pci::bus)
             .thenComparingInt(Pci::device)
             .thenComparingInt(Pci::function);
@@ -454,7 +481,12 @@ public class SystemFetch implements Model {
         for (Pci d : devices) counts.merge(d.vendorName(), 1, Integer::sum);
         output.append("\nDevices per vendor:\n");
         counts.forEach((vendor, count) ->
-            output.append("  ").append(vendor).append(": ").append(count).append('\n')
+            output
+                .append("  ")
+                .append(vendor)
+                .append(": ")
+                .append(count)
+                .append('\n')
         );
 
         // Use bus, device, and function as deterministic tie-breakers for vendor ordering.
@@ -469,16 +501,25 @@ public class SystemFetch implements Model {
             )
             .forEach(d -> appendAddress(output, d));
         output.append("\nSorted by bus, device, and function:\n");
-        devices.stream().sorted(address).forEach(d -> appendAddress(output, d));
+        devices
+            .stream()
+            .sorted(address)
+            .forEach(d -> appendAddress(output, d));
     }
 
     /* Appends one PCI device and its address to an analysis section. */
     private static void appendAddress(StringBuilder output, Pci d) {
-        output.append(String.format(
-            Locale.ROOT,
-            "  %s %s at %02x:%02x.%x%n",
-            d.vendorName(), d.name(), d.bus(), d.device(), d.function()
-        ));
+        output.append(
+            String.format(
+                Locale.ROOT,
+                "  %s %s at %02x:%02x.%x%n",
+                d.vendorName(),
+                d.name(),
+                d.bus(),
+                d.device(),
+                d.function()
+            )
+        );
     }
 
     /* No startup command is needed because the report is gathered before the TUI starts. */
@@ -504,14 +545,22 @@ public class SystemFetch implements Model {
             case "q", "Q", "esc", "ctrl+c" -> {
                 return UpdateResult.from(this, QuitMessage::new);
             }
-            case "right", "l", "tab" -> selectTab((selectedTab + 1) % TABS.length);
-            case "left", "h" -> selectTab((selectedTab + TABS.length - 1) % TABS.length);
+            case "right", "l", "tab" -> selectTab(
+                (selectedTab + 1) % TABS.length
+            );
+            case "left", "h" -> selectTab(
+                (selectedTab + TABS.length - 1) % TABS.length
+            );
             case "down", "j" -> scroll = Math.min(maxScroll(), scroll + 1);
             case "up", "k" -> scroll = Math.max(0, scroll - 1);
-            case "pagedown", "pgdown", "ctrl+d" ->
-                scroll = Math.min(maxScroll(), scroll + pageSize());
-            case "pageup", "pgup", "ctrl+u" ->
-                scroll = Math.max(0, scroll - pageSize());
+            case "pagedown", "pgdown", "ctrl+d" -> scroll = Math.min(
+                maxScroll(),
+                scroll + pageSize()
+            );
+            case "pageup", "pgup", "ctrl+u" -> scroll = Math.max(
+                0,
+                scroll - pageSize()
+            );
             case "home" -> scroll = 0;
             case "end" -> scroll = maxScroll();
             default -> {
@@ -528,34 +577,44 @@ public class SystemFetch implements Model {
             terminalWidth < MIN_TERMINAL_WIDTH ||
             terminalHeight < MIN_TERMINAL_HEIGHT
         ) {
-            return TITLE.render("System Fetch") + "\n"
-                + "Terminal too small. Resize to at least "
-                + MIN_TERMINAL_WIDTH
-                + "x"
-                + MIN_TERMINAL_HEIGHT
-                + ".\n"
-                + "Press q to quit.";
+            return (
+                TITLE.render("System Fetch") +
+                "\n" +
+                "Terminal too small. Resize to at least " +
+                MIN_TERMINAL_WIDTH +
+                "x" +
+                MIN_TERMINAL_HEIGHT +
+                ".\n" +
+                "Press q to quit."
+            );
         }
 
         StringBuilder output = new StringBuilder();
-        output.append(TITLE.render("SYSTEM FETCH"))
+        output
+            .append(TITLE.render("SYSTEM FETCH"))
             .append("  ")
             .append(HELP.render("LINUX SYSTEM OVERVIEW"))
             .append('\n');
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
         // Short labels keep the complete tab row readable in narrower terminals.
-        String[] shortTabs = {"CPU", "RAM", "PCI", "USB"};
+        String[] shortTabs = { "CPU", "RAM", "PCI", "USB" };
         for (int i = 0; i < TABS.length; i++) {
-            String tab = terminalWidth < 64
-                ? shortTabs[i]
-                : TABS[i].toUpperCase(Locale.ROOT);
-            output.append(i == selectedTab
+            String tab =
+                terminalWidth < 64
+                    ? shortTabs[i]
+                    : TABS[i].toUpperCase(Locale.ROOT);
+            output.append(
+                i == selectedTab
                     ? ACTIVE_TAB.render(" " + tab + " ")
-                    : INACTIVE_TAB.render(" " + tab + " "));
+                    : INACTIVE_TAB.render(" " + tab + " ")
+            );
             output.append(i == TABS.length - 1 ? '\n' : ' ');
         }
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
-        output.append(SECTION_TITLE.render(TABS[selectedTab].toUpperCase(Locale.ROOT)))
+        output
+            .append(
+                SECTION_TITLE.render(TABS[selectedTab].toUpperCase(Locale.ROOT))
+            )
             .append('\n');
 
         List<String> lines = wrappedLines();
@@ -567,7 +626,9 @@ public class SystemFetch implements Model {
             output.append(styleReportLine(lines.get(i))).append('\n');
         }
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
-        output.append(HELP.render(" ←/→ or Tab switch tabs   ↑/↓ scroll   q quit"));
+        output.append(
+            HELP.render(" ←/→ or Tab switch tabs   ↑/↓ scroll   q quit")
+        );
         return output.toString();
     }
 
@@ -585,14 +646,18 @@ public class SystemFetch implements Model {
         if (trimmed.startsWith("CPU ") && trimmed.contains(":")) {
             // Highlight the CPU label without changing its measured percentage.
             int separator = line.indexOf(':');
-            return LABEL.render(line.substring(0, separator + 1))
-                + line.substring(separator + 1);
+            return (
+                LABEL.render(line.substring(0, separator + 1)) +
+                line.substring(separator + 1)
+            );
         }
         // Keep short key/value labels distinct from longer device descriptions.
         int separator = line.indexOf(": ");
         if (separator > 0 && separator < 32) {
-            return LABEL.render(line.substring(0, separator + 1))
-                + line.substring(separator + 1);
+            return (
+                LABEL.render(line.substring(0, separator + 1)) +
+                line.substring(separator + 1)
+            );
         }
         return line;
     }
@@ -611,7 +676,10 @@ public class SystemFetch implements Model {
     /* Computes the scroll limit from the active section and terminal size. */
     private int maxScroll() {
         // Match the reserved rows used to calculate the visible content area.
-        return Math.max(0, wrappedLines().size() - Math.max(1, terminalHeight - 8));
+        return Math.max(
+            0,
+            wrappedLines().size() - Math.max(1, terminalHeight - 8)
+        );
     }
 
     /* Wraps report lines so narrow terminals can still display every field. */
