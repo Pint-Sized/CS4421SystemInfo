@@ -12,6 +12,13 @@ Processor, Memory, PCI, and USB. Without an interactive terminal, it prints all
 four sections as plain text. USB systems with no detected devices are reported
 explicitly.
 
+The interactive view refreshes processor load, memory usage, PCI devices, and
+USB devices every two seconds. Collection runs in background commands so tab
+navigation and scrolling remain responsive. If a refresh fails, the last
+successful snapshot remains visible and the status line reports the error.
+CPU utilization is calculated from successive `/proc/stat` samples without
+blocking for a sampling interval.
+
 Install Java 21 and Maven, then build and run from the project directory:
 
 ```sh
