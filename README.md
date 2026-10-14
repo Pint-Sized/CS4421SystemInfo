@@ -19,6 +19,10 @@ successful snapshot remains visible and the status line reports the error.
 CPU utilization is calculated from successive `/proc/stat` samples without
 blocking for a sampling interval.
 
+The code separates TUI presentation (`SystemFetch`), Linux hardware and
+resource collection (`SystemInfoCollector`), structured data (`SystemSnapshot`),
+and JSON serialization with atomic file replacement (`JsonSnapshotWriter`).
+
 Install Java 21 and Maven, then build and run from the project directory:
 
 ```sh
