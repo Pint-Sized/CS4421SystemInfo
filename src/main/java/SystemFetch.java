@@ -17,6 +17,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -43,6 +44,7 @@ public class SystemFetch implements Model {
     /* Below these dimensions the tab rail and report cannot be read reliably. */
     private static final int MIN_TERMINAL_WIDTH = 40;
     private static final int MIN_TERMINAL_HEIGHT = 7;
+    private static final Duration REFRESH_INTERVAL = Duration.ofSeconds(2);
 
     /* 256-color Lipgloss styles distinguish the active tab, headings, and labels. */
     private static final Style ACTIVE_TAB = Style.newStyle()
@@ -111,27 +113,34 @@ public class SystemFetch implements Model {
             "https://raw.githubusercontent.com/vcrhonek/hwdata/master/usb.ids"
         );
 
-        List<Pci> pci = readPci(pciNames);
-        List<Usb> usb = readUsb(usbNames);
-        List<String> sections = List.of(
-            processorInfo(),
-            memoryInfo(),
-            pciInfo(pci),
-            usbInfo(usb)
-        );
-
         if (System.console() == null || "dumb".equals(System.getenv("TERM"))) {
-            printPlainReport(sections);
+            printPlainReport(collectPlainSections(pciNames, usbNames));
             return;
         }
         try {
-            new Program(new SystemFetch(sections)).withAltScreen().run();
+            new Program(new SystemFetch(pciNames, usbNames))
+                .withAltScreen()
+                .run();
         } catch (ProgramException e) {
             System.err.println(
                 "Interactive terminal unavailable; printing plain-text report."
             );
-            printPlainReport(sections);
+            printPlainReport(collectPlainSections(pciNames, usbNames));
         }
+    }
+
+    /* Samples CPU counters twice for a useful initial plain-text load report. */
+    private static List<String> collectPlainSections(
+        Map<Integer, Vendor> pciNames,
+        Map<Integer, Vendor> usbNames
+    ) throws IOException, InterruptedException {
+        Snapshot baseline = collectSections(Map.of(), pciNames, usbNames);
+        Thread.sleep(1000);
+        return collectSections(
+            baseline.cpuTimes(),
+            pciNames,
+            usbNames
+        ).sections();
     }
 
     /* Prints all sections sequentially when a full-screen terminal is unavailable. */
@@ -142,16 +151,41 @@ public class SystemFetch implements Model {
         }
     }
 
+    private record Snapshot(List<String> sections, Map<Integer, Cpu> cpuTimes) {}
+
+    private record RefreshMessage(
+        Snapshot snapshot,
+        String error
+    ) implements Message {}
+
+    private record RefreshTick() implements Message {}
+
     /* Current report content and terminal navigation state. */
     private final List<String> sections;
+    private final Map<Integer, Vendor> pciNames;
+    private final Map<Integer, Vendor> usbNames;
+    private Map<Integer, Cpu> previousCpuTimes = Map.of();
+    private String refreshStatus = "Collecting system information...";
     private int selectedTab;
     private int terminalWidth = 80;
     private int terminalHeight = 24;
     private int scroll;
 
-    /* Retains the gathered report for the duration of the TUI session. */
-    private SystemFetch(List<String> sections) {
-        this.sections = sections;
+    /* Starts with placeholders so the TUI can render before collection completes. */
+    private SystemFetch(
+        Map<Integer, Vendor> pciNames,
+        Map<Integer, Vendor> usbNames
+    ) {
+        this.pciNames = pciNames;
+        this.usbNames = usbNames;
+        this.sections = new ArrayList<>(
+            List.of(
+                "Collecting processor information...",
+                "Collecting memory information...",
+                "Collecting PCI devices...",
+                "Collecting USB devices..."
+            )
+        );
     }
 
     /*
@@ -238,13 +272,32 @@ public class SystemFetch implements Model {
         return vendors;
     }
 
-    /* Reads processor topology and measures load per logical CPU and physical core. */
-    private static String processorInfo()
-        throws IOException, InterruptedException {
+    /* Collects a complete system snapshot without waiting between CPU samples. */
+    private static Snapshot collectSections(
+        Map<Integer, Cpu> previousCpuTimes,
+        Map<Integer, Vendor> pciNames,
+        Map<Integer, Vendor> usbNames
+    ) throws IOException {
         CpuInfo info = readCpuInfo();
+        Map<Integer, Cpu> currentCpuTimes = cpuTimes();
+        List<String> sections = List.of(
+            processorInfo(info, previousCpuTimes, currentCpuTimes),
+            memoryInfo(),
+            pciInfo(readPci(pciNames)),
+            usbInfo(readUsb(usbNames))
+        );
+        return new Snapshot(sections, currentCpuTimes);
+    }
+
+    /* Renders processor topology and load measured since the previous refresh. */
+    private static String processorInfo(
+        CpuInfo info,
+        Map<Integer, Cpu> before,
+        Map<Integer, Cpu> after
+    ) {
         StringBuilder output = new StringBuilder();
         output.append("Model: ").append(info.model()).append('\n');
-        output.append("Logical CPU cores: ").append(info.logicalCpus()).append('\n');
+        output.append("Logical CPUs: ").append(info.logicalCpus()).append('\n');
         if (info.topologyAvailable()) {
             output.append("Physical CPU cores: ")
                 .append(info.coreByCpu().values().stream().distinct().count());
@@ -260,31 +313,31 @@ public class SystemFetch implements Model {
             );
         }
 
-        Map<Integer, Cpu> before = cpuTimes();
-        Thread.sleep(1000);
-        Map<Integer, Cpu> after = cpuTimes();
-        long logicalBusy = 0, logicalElapsed = 0;
+        double logicalLoadTotal = 0;
+        int logicalLoadCount = 0;
         Map<String, Cpu> physicalCoreTimes = new TreeMap<>();
         output.append("Load per logical CPU:\n");
-        for (int id : before.keySet().stream().sorted().toList()) {
+        if (before.isEmpty()) output.append("  Sampling...\n");
+        for (int id : after.keySet().stream().sorted().toList()) {
             Cpu start = before.get(id),
                 end = after.get(id);
-            if (end == null) continue;
+            if (start == null) continue;
             // Linux reports cumulative ticks; differences give the measured load.
             long busy = end.busy() - start.busy();
             long elapsed = busy + end.idle() - start.idle();
-            if (elapsed <= 0) continue;
+            if (elapsed <= 0 || busy < 0) continue;
+            double load = busy * 100.0 / elapsed;
             // Divide busy ticks by all elapsed ticks for this CPU's utilization percentage.
             output.append(
                 String.format(
                     Locale.ROOT,
                     "  CPU %d: %.1f%%%n",
                     id,
-                    (busy * 100.0) / elapsed
+                    load
                 )
             );
-            logicalBusy += busy;
-            logicalElapsed += elapsed;
+            logicalLoadTotal += load;
+            logicalLoadCount++;
             String core = info.coreByCpu().get(id);
             if (core != null) {
                 physicalCoreTimes.merge(
@@ -295,41 +348,42 @@ public class SystemFetch implements Model {
                 );
             }
         }
-        if (logicalElapsed > 0) {
-            // Aggregate counters weight each CPU by elapsed ticks during the sample.
+        if (logicalLoadCount > 0) {
             output.append(
                 String.format(
                     Locale.ROOT,
                     "Average across all logical CPUs: %.1f%%%n",
-                    (logicalBusy * 100.0) / logicalElapsed
+                    logicalLoadTotal / logicalLoadCount
                 )
             );
         }
 
         if (info.topologyAvailable()) {
-            long coreBusy = 0, coreElapsed = 0;
+            double coreLoadTotal = 0;
+            int coreLoadCount = 0;
             output.append("Load per physical core:\n");
             for (Map.Entry<String, Cpu> entry : physicalCoreTimes.entrySet()) {
                 Cpu times = entry.getValue();
                 long elapsed = times.busy() + times.idle();
                 if (elapsed <= 0) continue;
+                double load = times.busy() * 100.0 / elapsed;
                 output.append(
                     String.format(
                         Locale.ROOT,
                         "  %s: %.1f%%%n",
                         entry.getKey(),
-                        times.busy() * 100.0 / elapsed
+                        load
                     )
                 );
-                coreBusy += times.busy();
-                coreElapsed += elapsed;
+                coreLoadTotal += load;
+                coreLoadCount++;
             }
-            if (coreElapsed > 0) {
+            if (coreLoadCount > 0) {
                 output.append(
                     String.format(
                         Locale.ROOT,
                         "Average across all physical cores: %.1f%%%n",
-                        coreBusy * 100.0 / coreElapsed
+                        coreLoadTotal / coreLoadCount
                     )
                 );
             }
@@ -637,15 +691,37 @@ public class SystemFetch implements Model {
         );
     }
 
-    /* No startup command is needed because the report is gathered before the TUI starts. */
+    /* Starts first collection in the command executor, never on the UI thread. */
     @Override
     public Command init() {
-        return null;
+        return refreshCommand(previousCpuTimes);
     }
 
     /* Handles terminal resizing, tab navigation, scrolling, and quit input. */
     @Override
     public UpdateResult<? extends Model> update(Message message) {
+        if (message instanceof RefreshMessage refresh) {
+            if (refresh.snapshot() != null) {
+                sections.clear();
+                sections.addAll(refresh.snapshot().sections());
+                previousCpuTimes = refresh.snapshot().cpuTimes();
+                scroll = Math.min(scroll, maxScroll());
+                refreshStatus = "Updated " + LocalTime.now().withNano(0);
+            } else {
+                refreshStatus =
+                    "Refresh failed: " +
+                    refresh.error() +
+                    " (showing last successful data)";
+            }
+            return UpdateResult.from(
+                this,
+                Command.tick(REFRESH_INTERVAL, ignored -> new RefreshTick())
+            );
+        }
+        if (message instanceof RefreshTick) {
+            refreshStatus = "Refreshing...";
+            return UpdateResult.from(this, refreshCommand(previousCpuTimes));
+        }
         if (message instanceof WindowSizeMessage size) {
             terminalWidth = Math.max(1, size.width());
             terminalHeight = Math.max(1, size.height());
@@ -734,7 +810,7 @@ public class SystemFetch implements Model {
 
         List<String> lines = wrappedLines();
         // Reserve rows for the title, tab rail, section heading, dividers, and key help.
-        int visibleLines = Math.max(1, terminalHeight - 8);
+        int visibleLines = Math.max(1, terminalHeight - 9);
         int start = Math.min(scroll, Math.max(0, lines.size() - visibleLines));
         int end = Math.min(lines.size(), start + visibleLines);
         for (int i = start; i < end; i++) {
@@ -743,8 +819,31 @@ public class SystemFetch implements Model {
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
         output.append(
             HELP.render(" ←/→ or Tab switch tabs   ↑/↓ scroll   q quit")
-        );
+        ).append('\n');
+        String status = refreshStatus;
+        if (status.codePointCount(0, status.length()) > terminalWidth) {
+            status = status.substring(0, status.offsetByCodePoints(0, terminalWidth));
+        }
+        output.append(HELP.render(status));
         return output.toString();
+    }
+
+    /* Collects a snapshot in the command executor and reports failures to the UI. */
+    private Command refreshCommand(Map<Integer, Cpu> previousTimes) {
+        return () -> {
+            try {
+                return new RefreshMessage(
+                    collectSections(previousTimes, pciNames, usbNames),
+                    null
+                );
+            } catch (IOException | RuntimeException e) {
+                String error = e.getMessage();
+                return new RefreshMessage(
+                    null,
+                    error == null ? e.getClass().getSimpleName() : error
+                );
+            }
+        };
     }
 
     /* Highlights headings and labels while leaving device descriptions easy to read. */
@@ -785,7 +884,7 @@ public class SystemFetch implements Model {
 
     /* Leaves room on screen for the title, tabs, and key-help line. */
     private int pageSize() {
-        return Math.max(1, terminalHeight - 10);
+        return Math.max(1, terminalHeight - 11);
     }
 
     /* Computes the scroll limit from the active section and terminal size. */
@@ -793,7 +892,7 @@ public class SystemFetch implements Model {
         // Match the reserved rows used to calculate the visible content area.
         return Math.max(
             0,
-            wrappedLines().size() - Math.max(1, terminalHeight - 8)
+            wrappedLines().size() - Math.max(1, terminalHeight - 9)
         );
     }
 
