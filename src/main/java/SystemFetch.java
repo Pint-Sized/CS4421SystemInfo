@@ -14,9 +14,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
@@ -101,9 +105,39 @@ public class SystemFetch implements Model {
     /* A vendor name and the device/product names belonging to that vendor. */
     private record Vendor(String name, Map<Integer, String> devices) {}
 
+    private record CpuLoad(int id, double utilization) {}
+
+    private record CoreLoad(String name, double utilization) {}
+
+    private record ProcessorSnapshot(
+        String model,
+        int logicalCpus,
+        Integer physicalCores,
+        boolean topologyAvailable,
+        boolean topologyComplete,
+        List<CpuLoad> logicalLoads,
+        Double averageLogicalLoad,
+        List<CoreLoad> physicalLoads,
+        Double averagePhysicalLoad
+    ) {}
+
+    private record MemorySnapshot(
+        long totalKiB,
+        long usedKiB,
+        double usedPercent
+    ) {}
+
+    private record SystemSnapshot(
+        ProcessorSnapshot processor,
+        MemorySnapshot memory,
+        List<Pci> pci,
+        List<Usb> usb
+    ) {}
+
     /* Loads hardware IDs and system data, then runs the interactive or text report. */
     public static void main(String[] args)
         throws IOException, InterruptedException {
+        Path jsonFile = parseJsonFile(args);
         Map<Integer, Vendor> pciNames = loadIds(
             "pci.ids",
             "https://pci-ids.ucw.cz/v2.2/pci.ids"
@@ -114,23 +148,27 @@ public class SystemFetch implements Model {
         );
 
         if (System.console() == null || "dumb".equals(System.getenv("TERM"))) {
-            printPlainReport(collectPlainSections(pciNames, usbNames));
+            Snapshot snapshot = collectPlainSnapshot(pciNames, usbNames);
+            if (jsonFile != null) writeJsonAtomically(jsonFile, snapshot.data());
+            printPlainReport(snapshot.sections());
             return;
         }
         try {
-            new Program(new SystemFetch(pciNames, usbNames))
+            new Program(new SystemFetch(pciNames, usbNames, jsonFile))
                 .withAltScreen()
                 .run();
         } catch (ProgramException e) {
             System.err.println(
                 "Interactive terminal unavailable; printing plain-text report."
             );
-            printPlainReport(collectPlainSections(pciNames, usbNames));
+            Snapshot snapshot = collectPlainSnapshot(pciNames, usbNames);
+            if (jsonFile != null) writeJsonAtomically(jsonFile, snapshot.data());
+            printPlainReport(snapshot.sections());
         }
     }
 
     /* Samples CPU counters twice for a useful initial plain-text load report. */
-    private static List<String> collectPlainSections(
+    private static Snapshot collectPlainSnapshot(
         Map<Integer, Vendor> pciNames,
         Map<Integer, Vendor> usbNames
     ) throws IOException, InterruptedException {
@@ -140,7 +178,25 @@ public class SystemFetch implements Model {
             baseline.cpuTimes(),
             pciNames,
             usbNames
-        ).sections();
+        );
+    }
+
+    private static Path parseJsonFile(String[] args) {
+        Path jsonFile = null;
+        for (int i = 0; i < args.length; i++) {
+            if (!args[i].equals("--json-file")) {
+                throw new IllegalArgumentException(
+                    "Unknown option: " + args[i] + "\nUsage: SystemFetch [--json-file <path>]"
+                );
+            }
+            if (jsonFile != null || i + 1 >= args.length) {
+                throw new IllegalArgumentException(
+                    "Usage: SystemFetch [--json-file <path>]"
+                );
+            }
+            jsonFile = Path.of(args[++i]).toAbsolutePath();
+        }
+        return jsonFile;
     }
 
     /* Prints all sections sequentially when a full-screen terminal is unavailable. */
@@ -151,7 +207,11 @@ public class SystemFetch implements Model {
         }
     }
 
-    private record Snapshot(List<String> sections, Map<Integer, Cpu> cpuTimes) {}
+    private record Snapshot(
+        List<String> sections,
+        Map<Integer, Cpu> cpuTimes,
+        SystemSnapshot data
+    ) {}
 
     private record RefreshMessage(
         Snapshot snapshot,
@@ -164,6 +224,7 @@ public class SystemFetch implements Model {
     private final List<String> sections;
     private final Map<Integer, Vendor> pciNames;
     private final Map<Integer, Vendor> usbNames;
+    private final Path jsonFile;
     private Map<Integer, Cpu> previousCpuTimes = Map.of();
     private String refreshStatus = "Collecting system information...";
     private int selectedTab;
@@ -174,10 +235,12 @@ public class SystemFetch implements Model {
     /* Starts with placeholders so the TUI can render before collection completes. */
     private SystemFetch(
         Map<Integer, Vendor> pciNames,
-        Map<Integer, Vendor> usbNames
+        Map<Integer, Vendor> usbNames,
+        Path jsonFile
     ) {
         this.pciNames = pciNames;
         this.usbNames = usbNames;
+        this.jsonFile = jsonFile;
         this.sections = new ArrayList<>(
             List.of(
                 "Collecting processor information...",
@@ -280,44 +343,177 @@ public class SystemFetch implements Model {
     ) throws IOException {
         CpuInfo info = readCpuInfo();
         Map<Integer, Cpu> currentCpuTimes = cpuTimes();
-        List<String> sections = List.of(
-            processorInfo(info, previousCpuTimes, currentCpuTimes),
-            memoryInfo(),
-            pciInfo(readPci(pciNames)),
-            usbInfo(readUsb(usbNames))
+        ProcessorSnapshot processor = processorSnapshot(
+            info,
+            previousCpuTimes,
+            currentCpuTimes
         );
-        return new Snapshot(sections, currentCpuTimes);
+        MemorySnapshot memory = memorySnapshot();
+        List<Pci> pci = readPci(pciNames);
+        List<Usb> usb = readUsb(usbNames);
+        List<String> sections = List.of(
+            processorInfo(processor),
+            memoryInfo(memory),
+            pciInfo(pci),
+            usbInfo(usb)
+        );
+        return new Snapshot(
+            sections,
+            currentCpuTimes,
+            new SystemSnapshot(processor, memory, pci, usb)
+        );
     }
 
-    /* Renders processor topology and load measured since the previous refresh. */
-    private static String processorInfo(
+    /* Writes a complete snapshot to a sibling temporary file before replacing the target. */
+    private static void writeJsonAtomically(Path target, SystemSnapshot snapshot)
+        throws IOException {
+        Path parent = target.getParent();
+        if (parent == null) parent = Path.of(".").toAbsolutePath();
+        Files.createDirectories(parent);
+        Path temporary = Files.createTempFile(parent, ".systemfetch-", ".tmp");
+        try {
+            Files.writeString(temporary, toJson(snapshot));
+            Files.move(
+                temporary,
+                target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            );
+        } catch (AtomicMoveNotSupportedException e) {
+            throw new IOException(
+                "Atomic replacement is not supported for " + target,
+                e
+            );
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static String toJson(SystemSnapshot snapshot) {
+        ProcessorSnapshot processor = snapshot.processor();
+        MemorySnapshot memory = snapshot.memory();
+        StringBuilder json = new StringBuilder("{\n");
+        json.append("  \"schema_version\": 1,\n  \"generated_at\": ")
+            .append(jsonString(Instant.now().toString()))
+            .append(",\n  \"processor\": {\n");
+        json.append("    \"model\": ").append(jsonString(processor.model())).append(",\n");
+        json.append("    \"logical_cpus\": ").append(processor.logicalCpus()).append(",\n");
+        json.append("    \"physical_cores\": ")
+            .append(processor.physicalCores() == null ? "null" : processor.physicalCores())
+            .append(",\n    \"physical_topology_available\": ")
+            .append(processor.topologyAvailable())
+            .append(",\n    \"physical_topology_complete\": ")
+            .append(processor.topologyComplete())
+            .append(",\n    \"logical_cpu_load_percent\": [");
+        for (int i = 0; i < processor.logicalLoads().size(); i++) {
+            CpuLoad load = processor.logicalLoads().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n      {\"id\": ")
+                .append(load.id())
+                .append(", \"utilization\": ")
+                .append(load.utilization())
+                .append('}');
+        }
+        if (!processor.logicalLoads().isEmpty()) json.append('\n').append("    ");
+        json.append("],\n    \"average_logical_load_percent\": ")
+            .append(jsonNumber(processor.averageLogicalLoad()))
+            .append(",\n    \"physical_core_load_percent\": [");
+        for (int i = 0; i < processor.physicalLoads().size(); i++) {
+            CoreLoad load = processor.physicalLoads().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n      {\"name\": ")
+                .append(jsonString(load.name()))
+                .append(", \"utilization\": ")
+                .append(load.utilization())
+                .append('}');
+        }
+        if (!processor.physicalLoads().isEmpty()) json.append('\n').append("    ");
+        json.append("],\n    \"average_physical_core_load_percent\": ")
+            .append(jsonNumber(processor.averagePhysicalLoad()))
+            .append("\n  },\n  \"memory\": {\n")
+            .append("    \"total_kib\": ")
+            .append(memory.totalKiB())
+            .append(",\n    \"used_kib\": ")
+            .append(memory.usedKiB())
+            .append(",\n    \"used_percent\": ")
+            .append(memory.usedPercent())
+            .append("\n  },\n  \"pci_devices\": [");
+        for (int i = 0; i < snapshot.pci().size(); i++) {
+            Pci device = snapshot.pci().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n    {\"bus\": ")
+                .append(device.bus())
+                .append(", \"device\": ")
+                .append(device.device())
+                .append(", \"function\": ")
+                .append(device.function())
+                .append(", \"vendor_id\": ")
+                .append(jsonString(hex(device.vendor())))
+                .append(", \"device_id\": ")
+                .append(jsonString(hex(device.id())))
+                .append(", \"class\": ")
+                .append(jsonString(String.format(Locale.ROOT, "%06x", device.deviceClass())))
+                .append(", \"vendor_name\": ")
+                .append(jsonString(device.vendorName()))
+                .append(", \"name\": ")
+                .append(jsonString(device.name()))
+                .append('}');
+        }
+        if (!snapshot.pci().isEmpty()) json.append('\n').append("  ");
+        json.append("],\n  \"usb_devices\": [");
+        for (int i = 0; i < snapshot.usb().size(); i++) {
+            Usb device = snapshot.usb().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n    {\"vendor_id\": ")
+                .append(jsonString(hex(device.vendor())))
+                .append(", \"product_id\": ")
+                .append(jsonString(hex(device.id())))
+                .append(", \"vendor_name\": ")
+                .append(jsonString(device.vendorName()))
+                .append(", \"name\": ")
+                .append(jsonString(device.name()))
+                .append('}');
+        }
+        if (!snapshot.usb().isEmpty()) json.append('\n').append("  ");
+        return json.append("]\n}\n").toString();
+    }
+
+    private static String jsonNumber(Double number) {
+        return number == null ? "null" : number.toString();
+    }
+
+    private static String jsonString(String value) {
+        StringBuilder escaped = new StringBuilder("\"");
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            switch (character) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (character < 0x20) {
+                        escaped.append(String.format(Locale.ROOT, "\\u%04x", (int) character));
+                    } else {
+                        escaped.append(character);
+                    }
+                }
+            }
+        }
+        return escaped.append('"').toString();
+    }
+
+    /* Calculates per-CPU and per-core loads from successive cumulative tick samples. */
+    private static ProcessorSnapshot processorSnapshot(
         CpuInfo info,
         Map<Integer, Cpu> before,
         Map<Integer, Cpu> after
     ) {
-        StringBuilder output = new StringBuilder();
-        output.append("Model: ").append(info.model()).append('\n');
-        output.append("Logical CPUs: ").append(info.logicalCpus()).append('\n');
-        if (info.topologyAvailable()) {
-            output.append("Physical CPU cores: ")
-                .append(info.coreByCpu().values().stream().distinct().count());
-            if (info.coreByCpu().size() < info.logicalCpus()) {
-                output.append(
-                    " (topology incomplete; unmapped logical CPUs are counted individually)"
-                );
-            }
-            output.append('\n');
-        } else {
-            output.append(
-                "Physical CPU core topology unavailable; load is grouped per logical CPU.\n"
-            );
-        }
-
-        double logicalLoadTotal = 0;
-        int logicalLoadCount = 0;
+        List<CpuLoad> logicalLoads = new ArrayList<>();
         Map<String, Cpu> physicalCoreTimes = new TreeMap<>();
-        output.append("Load per logical CPU:\n");
-        if (before.isEmpty()) output.append("  Sampling...\n");
         for (int id : after.keySet().stream().sorted().toList()) {
             Cpu start = before.get(id),
                 end = after.get(id);
@@ -327,17 +523,7 @@ public class SystemFetch implements Model {
             long elapsed = busy + end.idle() - start.idle();
             if (elapsed <= 0 || busy < 0) continue;
             double load = busy * 100.0 / elapsed;
-            // Divide busy ticks by all elapsed ticks for this CPU's utilization percentage.
-            output.append(
-                String.format(
-                    Locale.ROOT,
-                    "  CPU %d: %.1f%%%n",
-                    id,
-                    load
-                )
-            );
-            logicalLoadTotal += load;
-            logicalLoadCount++;
+            logicalLoads.add(new CpuLoad(id, load));
             String core = info.coreByCpu().get(id);
             if (core != null) {
                 physicalCoreTimes.merge(
@@ -348,42 +534,100 @@ public class SystemFetch implements Model {
                 );
             }
         }
-        if (logicalLoadCount > 0) {
+        List<CoreLoad> physicalLoads = physicalCoreTimes.entrySet()
+            .stream()
+            .map(entry -> {
+                Cpu times = entry.getValue();
+                long elapsed = times.busy() + times.idle();
+                return elapsed <= 0
+                    ? null
+                    : new CoreLoad(
+                        entry.getKey(),
+                        times.busy() * 100.0 / elapsed
+                    );
+            })
+            .filter(Objects::nonNull)
+            .toList();
+        Integer physicalCores = info.topologyAvailable()
+            ? (int) info.coreByCpu().values().stream().distinct().count()
+            : null;
+        return new ProcessorSnapshot(
+            info.model(),
+            info.logicalCpus(),
+            physicalCores,
+            info.topologyAvailable(),
+            info.topologyAvailable() &&
+                info.coreByCpu().values().stream().noneMatch(name -> name.startsWith("CPU ")),
+            List.copyOf(logicalLoads),
+            averageLoad(logicalLoads.stream().map(CpuLoad::utilization).toList()),
+            physicalLoads,
+            averageLoad(physicalLoads.stream().map(CoreLoad::utilization).toList())
+        );
+    }
+
+    private static Double averageLoad(List<Double> loads) {
+        return loads.isEmpty()
+            ? null
+            : loads.stream().mapToDouble(Double::doubleValue).average().orElseThrow();
+    }
+
+    /* Renders processor topology and loads for the terminal report. */
+    private static String processorInfo(ProcessorSnapshot info) {
+        StringBuilder output = new StringBuilder();
+        output.append("Model: ").append(info.model()).append('\n');
+        output.append("Logical CPUs: ").append(info.logicalCpus()).append('\n');
+        if (info.topologyAvailable()) {
+            output.append("Physical CPU cores: ").append(info.physicalCores());
+            if (!info.topologyComplete()) {
+                output.append(
+                    " (topology incomplete; unmapped logical CPUs counted individually)"
+                );
+            }
+            output.append('\n');
+        } else {
+            output.append(
+                "Physical CPU core topology unavailable; load is grouped per logical CPU.\n"
+            );
+        }
+        output.append("Load per logical CPU:\n");
+        if (info.logicalLoads().isEmpty()) output.append("  Sampling...\n");
+        for (CpuLoad load : info.logicalLoads()) {
+            output.append(
+                String.format(
+                    Locale.ROOT,
+                    "  CPU %d: %.1f%%%n",
+                    load.id(),
+                    load.utilization()
+                )
+            );
+        }
+        if (info.averageLogicalLoad() != null) {
             output.append(
                 String.format(
                     Locale.ROOT,
                     "Average across all logical CPUs: %.1f%%%n",
-                    logicalLoadTotal / logicalLoadCount
+                    info.averageLogicalLoad()
                 )
             );
         }
-
         if (info.topologyAvailable()) {
-            double coreLoadTotal = 0;
-            int coreLoadCount = 0;
             output.append("Load per physical core:\n");
-            for (Map.Entry<String, Cpu> entry : physicalCoreTimes.entrySet()) {
-                Cpu times = entry.getValue();
-                long elapsed = times.busy() + times.idle();
-                if (elapsed <= 0) continue;
-                double load = times.busy() * 100.0 / elapsed;
+            for (CoreLoad load : info.physicalLoads()) {
                 output.append(
                     String.format(
                         Locale.ROOT,
                         "  %s: %.1f%%%n",
-                        entry.getKey(),
-                        load
+                        load.name(),
+                        load.utilization()
                     )
                 );
-                coreLoadTotal += load;
-                coreLoadCount++;
             }
-            if (coreLoadCount > 0) {
+            if (info.averagePhysicalLoad() != null) {
                 output.append(
                     String.format(
                         Locale.ROOT,
                         "Average across all physical cores: %.1f%%%n",
-                        coreLoadTotal / coreLoadCount
+                        info.averagePhysicalLoad()
                     )
                 );
             }
@@ -477,8 +721,8 @@ public class SystemFetch implements Model {
         return result;
     }
 
-    /* Reports total and used memory from Linux's /proc/meminfo values, which are in KiB. */
-    private static String memoryInfo() throws IOException {
+    /* Reads total and used memory from Linux's /proc/meminfo values, in KiB. */
+    private static MemorySnapshot memorySnapshot() throws IOException {
         Map<String, Long> memory = new HashMap<>();
         for (String line : Files.readAllLines(Path.of("/proc/meminfo"))) {
             String[] fields = line.split("\\s+");
@@ -488,15 +732,19 @@ public class SystemFetch implements Model {
             );
         }
         long total = memory.get("MemTotal");
-        // /proc/meminfo values are in KiB; MemAvailable estimates reclaimable memory.
         long used =
             total - memory.getOrDefault("MemAvailable", memory.get("MemFree"));
+        return new MemorySnapshot(total, used, (used * 100.0) / total);
+    }
+
+    /* Formats memory values for the terminal report. */
+    private static String memoryInfo(MemorySnapshot memory) {
         return String.format(
             Locale.ROOT,
             "Total: %.1f GiB%nUsed: %.1f GiB (%.1f%%)",
-            total / 1048576.0,
-            used / 1048576.0,
-            (used * 100.0) / total
+            memory.totalKiB() / 1048576.0,
+            memory.usedKiB() / 1048576.0,
+            memory.usedPercent()
         );
     }
 
@@ -706,7 +954,12 @@ public class SystemFetch implements Model {
                 sections.addAll(refresh.snapshot().sections());
                 previousCpuTimes = refresh.snapshot().cpuTimes();
                 scroll = Math.min(scroll, maxScroll());
-                refreshStatus = "Updated " + LocalTime.now().withNano(0);
+                refreshStatus =
+                    refresh.error() == null
+                        ? "Updated " + LocalTime.now().withNano(0)
+                        : "JSON export failed: " +
+                            refresh.error() +
+                            " (last file remains unchanged)";
             } else {
                 refreshStatus =
                     "Refresh failed: " +
@@ -831,11 +1084,9 @@ public class SystemFetch implements Model {
     /* Collects a snapshot in the command executor and reports failures to the UI. */
     private Command refreshCommand(Map<Integer, Cpu> previousTimes) {
         return () -> {
+            Snapshot snapshot;
             try {
-                return new RefreshMessage(
-                    collectSections(previousTimes, pciNames, usbNames),
-                    null
-                );
+                snapshot = collectSections(previousTimes, pciNames, usbNames);
             } catch (IOException | RuntimeException e) {
                 String error = e.getMessage();
                 return new RefreshMessage(
@@ -843,6 +1094,18 @@ public class SystemFetch implements Model {
                     error == null ? e.getClass().getSimpleName() : error
                 );
             }
+            if (jsonFile != null) {
+                try {
+                    writeJsonAtomically(jsonFile, snapshot.data());
+                } catch (IOException | RuntimeException e) {
+                    String error = e.getMessage();
+                    return new RefreshMessage(
+                        snapshot,
+                        error == null ? e.getClass().getSimpleName() : error
+                    );
+                }
+            }
+            return new RefreshMessage(snapshot, null);
         };
     }
 
