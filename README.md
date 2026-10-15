@@ -1,89 +1,117 @@
 # System Fetch
 
-A Linux system-information program written in Java 21. It reports the processor
-model, logical and physical CPU counts, measured load per logical CPU and
-physical core, memory usage, PCI and USB devices, and resolved vendor/device
-names. The PCI tab also includes devices sorted by vendor and address, plus a
-device-count summary per vendor. When Linux does not expose physical topology,
-the program reports that limitation and shows load per logical CPU instead.
+System Fetch is a Java 21 command-line system information tool for Linux. It
+reports CPU model, logical and physical core counts and load, memory usage,
+PCI and USB devices, and resolved hardware names when available.
 
-In an interactive terminal, TUI4J presents the report in four styled tabs:
-Processor, Memory, PCI, and USB. Without an interactive terminal, it prints all
-four sections as plain text. USB systems with no detected devices are reported
-explicitly.
+## Requirements
 
-Use `--plain` to request a one-time plain-text report even in an interactive
-terminal:
+- Linux, with system information exposed through `/proc` and `/sys`
+- Java 21
+- Maven
+- An interactive terminal for the tabbed TUI
 
-```sh
-./system-fetch --plain
-```
+The launcher compiles the application and resolves its runtime dependencies
+with Maven. The first run may need network access to download Maven dependencies
+and, when hardware ID databases are not installed locally, the PCI/USB ID
+databases.
 
-The interactive view refreshes processor load, memory usage, PCI devices, and
-USB devices every two seconds. Collection runs in background commands so tab
-navigation and scrolling remain responsive. If a refresh fails, the last
-successful snapshot remains visible and the status line reports the error.
-CPU utilization is calculated from successive `/proc/stat` samples without
-blocking for a sampling interval.
+## Run
 
-The code separates TUI presentation (`SystemFetch`), Linux hardware and
-resource collection (`SystemInfoCollector`), structured data (`SystemSnapshot`),
-and JSON serialization with atomic file replacement (`JsonSnapshotWriter`).
-
-Install Java 21 and Maven, then build and run from the project directory:
+From the project directory, run the launcher:
 
 ```sh
-mvn compile
 ./system-fetch
 ```
 
-The executable project-local launcher compiles the application if needed,
-resolves its runtime dependencies, and forwards command-line arguments:
+The launcher prints `Loading system information...`, builds as needed, and
+forwards its arguments to the application. It uses the TUI in an interactive
+terminal. Without an interactive terminal (or when `TERM=dumb`), it prints a
+one-time plain-text report.
+
+Force a one-time plain-text report, including from an interactive terminal:
 
 ```sh
 ./system-fetch --plain
-./system-fetch --plain --json-file "./system info.json"
 ```
 
-To export snapshots for another program or a future web GUI, pass a JSON file
-path:
+## TUI controls and refresh
+
+The TUI shows Processor, Memory, PCI, and USB tabs. Values refresh every two
+seconds; system data collection runs in the background so navigation remains
+responsive. If a refresh fails, the last successful information remains
+visible and the status line reports the error.
+
+- Left/right arrows or Tab: change tabs
+- Up/down arrows: scroll
+- Page Up/Page Down: scroll by a page
+- Home/End: jump to the start/end
+- `q` or Escape: quit
+
+The terminal should be at least 40 columns by 7 rows. Report lines wrap to fit
+the available width.
+
+## JSON export
+
+Pass `--json-file` to write a structured snapshot:
 
 ```sh
 ./system-fetch --json-file ./system-info.json
 ```
 
-The plain-text and JSON export options can be used together:
+In the interactive TUI, the JSON file is refreshed every two seconds. The
+program writes each new document to a temporary file beside the destination
+and atomically renames it into place, so readers see a complete previous or
+current snapshot rather than a partial write. Atomic replacement must be
+supported by the destination filesystem. In plain-text mode, one JSON snapshot
+is written before the program exits.
+
+Combine plain-text output and JSON export:
 
 ```sh
-./system-fetch --plain --json-file ./system-info.json
+./system-fetch --plain --json-file "./system info.json"
 ```
 
-While the interactive TUI is running, this file is replaced with a fresh,
-complete snapshot every two seconds. Each update uses an atomic rename, so
-readers see either the previous complete document or the next one. If the
-filesystem does not support atomic replacement, the TUI reports the export
-error and leaves the last successful file intact. In plain-text mode, one
-snapshot is written before the program exits.
+The JSON document has `schema_version` and UTC `generated_at` fields, plus:
 
-The JSON document includes a `schema_version`, a UTC `generated_at` timestamp,
-a `processor` object with logical and physical CPU counts and load percentages,
-a `memory` object with total and used KiB and usage percentage, and
-`pci_devices` and `usb_devices` arrays with device IDs and names. When CPU
-topology is unavailable, `physical_cores` and physical-core load are `null` or
-empty, while `physical_topology_available` is `false`. If topology is only
-partially available, `physical_topology_complete` is `false` and unmapped
-logical CPUs are counted individually. Per-CPU and per-core load arrays are
-empty and their averages are `null` until there is a prior sample to compare.
+- `processor`: model, logical CPU count, physical core count when available,
+  topology availability/completeness, per-logical-CPU and per-physical-core
+  load percentages, and their averages.
+- `memory`: total and used memory in KiB and used percentage.
+- `pci_devices` and `usb_devices`: device IDs and resolved names.
 
-Use the left/right arrow keys or Tab to switch between the Processor, Memory,
-PCI, and USB tabs. Use up/down to scroll, Page Up/Page Down to move by a page,
-Home/End to jump to the start/end, and `q` or Escape to quit. Resize terminals
-smaller than 40 columns by 7 rows when prompted. The UI wraps report lines to
-fit the terminal.
+If physical topology is unavailable, `physical_cores` and the average physical
+load are `null`, the physical-core load list is empty, and
+`physical_topology_available` is `false`. Load arrays are empty and averages
+are `null` until a prior CPU sample is available. Incomplete topology is marked
+with `physical_topology_complete: false`; CPUs without topology data are
+counted individually.
 
-Hardware ID databases are searched in the project directory, `data/`, `ids/`,
-and common system locations. Missing `pci.ids` or `usb.ids` files are downloaded
-into `data/` on first run, so network access is needed if no local copy is
-available. If a database cannot be obtained or an ID is not listed, the raw
-hexadecimal ID is shown. System information is read from Linux `/proc` and
-`/sys` filesystems.
+The default `system-info.json` output is ignored by Git. Choose another
+destination if you want to keep or track an export.
+
+## Hardware names and limitations
+
+PCI and USB names are resolved using `pci.ids` and `usb.ids` databases. The
+program searches the project directory, `data/`, `ids/`, `/usr/share/hwdata/`,
+and `/usr/share/misc/`. If a database is missing, it tries to download and
+cache it under `data/`; if that is unavailable, raw hexadecimal IDs are shown.
+
+CPU topology depends on information provided by Linux and the processor
+architecture. If physical-core details are missing, the tool reports that
+limitation and provides logical CPU load instead. In containers, `/proc` and
+`/sys` may describe the host rather than the container's CPU quota, so reported
+CPU counts and utilization may not match the resources available to the
+container. NixOS and other Linux distributions are supported where Java 21,
+Maven, and the expected Linux system files are available.
+
+## Troubleshooting
+
+- **`mvn: command not found`:** install Maven and ensure it is on `PATH`.
+- **The launcher is not executable:** run `chmod +x system-fetch`, then retry.
+- **Hardware names show as hexadecimal IDs:** install the matching hardware ID
+  database or allow network access for the initial download.
+- **Physical-core count is unavailable:** the kernel or architecture did not
+  provide usable socket/core topology; logical CPU reporting remains available.
+- **JSON export fails:** check that the destination directory is writable and
+  that its filesystem supports atomic replacement.
