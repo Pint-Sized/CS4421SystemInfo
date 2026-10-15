@@ -6,20 +6,9 @@ usage, PCI and USB devices, and resolved hardware names when available.
 
 ## Contents
 
-<table width="100%">
-  <tr>
-    <td align="center" width="25%"><a href="#requirements"><kbd>Requirements</kbd></a></td>
-    <td align="center" width="25%"><a href="#quick-start"><kbd>Quick start</kbd></a></td>
-    <td align="center" width="25%"><a href="#screenshots"><kbd>Screenshots</kbd></a></td>
-    <td align="center" width="25%"><a href="#plain-text-output"><kbd>Plain-text output</kbd></a></td>
-  </tr>
-  <tr>
-    <td align="center" width="25%"><a href="#tui-controls-and-refresh"><kbd>TUI controls</kbd></a></td>
-    <td align="center" width="25%"><a href="#json-export"><kbd>JSON export</kbd></a></td>
-    <td align="center" width="25%"><a href="#hardware-names-and-platform-limitations"><kbd>Hardware &amp; platform</kbd></a></td>
-    <td align="center" width="25%"><a href="#troubleshooting"><kbd>Troubleshooting</kbd></a></td>
-  </tr>
-</table>
+| <a href="#requirements"><kbd>Requirements</kbd></a> | <a href="#quick-start"><kbd>Quick start</kbd></a> | <a href="#screenshots"><kbd>Screenshots</kbd></a> | <a href="#plain-text-output"><kbd>Plain-text output</kbd></a> |
+|:---:|:---:|:---:|:---:|
+| <a href="#tui-controls-and-refresh"><kbd>TUI controls</kbd></a> | <a href="#json-export"><kbd>JSON export</kbd></a> | <a href="#hardware-names-and-platform-limitations"><kbd>Hardware &amp; platform</kbd></a> | <a href="#troubleshooting"><kbd>Troubleshooting</kbd></a> |
 
 ## Requirements
 
