@@ -6,9 +6,14 @@ usage, PCI and USB devices, and resolved hardware names when available.
 
 ## Contents
 
-| <a href="#requirements"><kbd>Requirements</kbd></a> | <a href="#quick-start"><kbd>Quick start</kbd></a> | <a href="#screenshots"><kbd>Screenshots</kbd></a> | <a href="#plain-text-output"><kbd>Plain-text output</kbd></a> |
-|:---:|:---:|:---:|:---:|
-| <a href="#tui-controls-and-refresh"><kbd>TUI controls</kbd></a> | <a href="#json-export"><kbd>JSON export</kbd></a> | <a href="#hardware-names-and-platform-limitations"><kbd>Hardware &amp; platform</kbd></a> | <a href="#troubleshooting"><kbd>Troubleshooting</kbd></a> |
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Screenshots](#screenshots)
+- [Plain-text output](#plain-text-output)
+- [TUI controls and refresh](#tui-controls-and-refresh)
+- [JSON export](#json-export)
+- [Hardware names and platform limitations](#hardware-names-and-platform-limitations)
+- [Troubleshooting](#troubleshooting)
 
 ## Requirements
 
