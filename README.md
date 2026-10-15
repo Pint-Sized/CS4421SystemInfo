@@ -6,14 +6,20 @@ usage, PCI and USB devices, and resolved hardware names when available.
 
 ## Contents
 
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Screenshots](#screenshots)
-- [Plain-text output](#plain-text-output)
-- [TUI controls and refresh](#tui-controls-and-refresh)
-- [JSON export](#json-export)
-- [Hardware names and platform limitations](#hardware-names-and-platform-limitations)
-- [Troubleshooting](#troubleshooting)
+<div align="center">
+
+**[<kbd>&nbsp;<br>Requirements<br>&nbsp;</kbd>](#requirements)**&nbsp;&nbsp;
+**[<kbd>&nbsp;<br>Quick start<br>&nbsp;</kbd>](#quick-start)**&nbsp;&nbsp;
+**[<kbd>&nbsp;<br>Screenshots<br>&nbsp;</kbd>](#screenshots)**
+
+**[<kbd>&nbsp;<br>Plain-text output<br>&nbsp;</kbd>](#plain-text-output)**&nbsp;&nbsp;
+**[<kbd>&nbsp;<br>TUI controls and refresh<br>&nbsp;</kbd>](#tui-controls-and-refresh)**&nbsp;&nbsp;
+**[<kbd>&nbsp;<br>JSON export<br>&nbsp;</kbd>](#json-export)**
+
+**[<kbd>&nbsp;<br>Hardware names and platform limitations<br>&nbsp;</kbd>](#hardware-names-and-platform-limitations)**&nbsp;&nbsp;
+**[<kbd>&nbsp;<br>Troubleshooting<br>&nbsp;</kbd>](#troubleshooting)**
+
+</div>
 
 ## Requirements
 
