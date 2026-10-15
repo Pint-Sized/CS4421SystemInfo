@@ -12,6 +12,13 @@ Processor, Memory, PCI, and USB. Without an interactive terminal, it prints all
 four sections as plain text. USB systems with no detected devices are reported
 explicitly.
 
+Use `--plain` to request a one-time plain-text report even in an interactive
+terminal:
+
+```sh
+mvn compile exec:java -Dexec.args="--plain"
+```
+
 The interactive view refreshes processor load, memory usage, PCI devices, and
 USB devices every two seconds. Collection runs in background commands so tab
 navigation and scrolling remain responsive. If a refresh fails, the last
@@ -34,6 +41,12 @@ path:
 
 ```sh
 mvn compile exec:java -Dexec.args="--json-file ./system-info.json"
+```
+
+The plain-text and JSON export options can be used together:
+
+```sh
+mvn compile exec:java -Dexec.args="--plain --json-file ./system-info.json"
 ```
 
 While the interactive TUI is running, this file is replaced with a fresh,

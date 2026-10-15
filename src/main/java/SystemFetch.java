@@ -66,7 +66,8 @@ public class SystemFetch implements Model {
     /* Loads hardware IDs and system data, then runs the interactive or text report. */
     public static void main(String[] args)
         throws IOException, InterruptedException {
-        Path jsonFile = parseJsonFile(args);
+        Options options = parseOptions(args);
+        Path jsonFile = options.jsonFile();
         Map<Integer, SystemInfoCollector.Vendor> pciNames =
             SystemInfoCollector.loadIds(
                 "pci.ids",
@@ -82,7 +83,11 @@ public class SystemFetch implements Model {
             usbNames
         );
 
-        if (System.console() == null || "dumb".equals(System.getenv("TERM"))) {
+        if (
+            options.plainText() ||
+            System.console() == null ||
+            "dumb".equals(System.getenv("TERM"))
+        ) {
             Snapshot snapshot = collectPlainSnapshot(collector);
             if (jsonFile != null) {
                 JsonSnapshotWriter.writeAtomically(jsonFile, snapshot.data());
@@ -114,25 +119,31 @@ public class SystemFetch implements Model {
         return createReport(collector.collect(baseline.cpuTimes()));
     }
 
-    /* Validates supported command-line options and normalizes the export path. */
-    private static Path parseJsonFile(String[] args) {
+    private record Options(Path jsonFile, boolean plainText) {}
+
+    /* Parses output options and normalizes the optional JSON export path. */
+    private static Options parseOptions(String[] args) {
         Path jsonFile = null;
+        boolean plainText = false;
         for (int i = 0; i < args.length; i++) {
-            if (!args[i].equals("--json-file")) {
-                throw new IllegalArgumentException(
+            switch (args[i]) {
+                case "--plain" -> plainText = true;
+                case "--json-file" -> {
+                    if (jsonFile != null || i + 1 >= args.length) {
+                        throw new IllegalArgumentException(
+                            "Usage: SystemFetch [--plain] [--json-file <path>]"
+                        );
+                    }
+                    jsonFile = Path.of(args[++i]).toAbsolutePath();
+                }
+                default -> throw new IllegalArgumentException(
                     "Unknown option: " +
                         args[i] +
-                        "\nUsage: SystemFetch [--json-file <path>]"
+                        "\nUsage: SystemFetch [--plain] [--json-file <path>]"
                 );
             }
-            if (jsonFile != null || i + 1 >= args.length) {
-                throw new IllegalArgumentException(
-                    "Usage: SystemFetch [--json-file <path>]"
-                );
-            }
-            jsonFile = Path.of(args[++i]).toAbsolutePath();
         }
-        return jsonFile;
+        return new Options(jsonFile, plainText);
     }
 
     /* Prints all sections sequentially when a full-screen terminal is unavailable. */
