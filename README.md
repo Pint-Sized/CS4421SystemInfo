@@ -29,6 +29,27 @@ forwards its arguments to the application. It uses the TUI in an interactive
 terminal. Without an interactive terminal (or when `TERM=dumb`), it prints a
 one-time plain-text report.
 
+## Screenshots
+
+Screenshots below show the four TUI tabs. Values are representative examples
+and are not read from a user's machine.
+
+### Processor
+
+![System Fetch Processor tab](docs/images/processor.svg)
+
+### Memory
+
+![System Fetch Memory tab](docs/images/memory.svg)
+
+### PCI devices
+
+![System Fetch PCI tab](docs/images/pci.svg)
+
+### USB devices
+
+![System Fetch USB tab](docs/images/usb.svg)
+
 Force a one-time plain-text report, including from an interactive terminal:
 
 ```sh

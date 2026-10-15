@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1048" height="577" viewBox="0 0 1048 577">
+<rect width="100%" height="100%" rx="16" fill="#10131a"/>
+<rect x="1" y="1" width="1046" height="575" rx="16" fill="none" stroke="#303744"/>
+<circle cx="24" cy="22" r="5" fill="#f7768e"/><circle cx="43" cy="22" r="5" fill="#e0af68"/><circle cx="62" cy="22" r="5" fill="#9ece6a"/>
+<g font-family="DejaVu Sans Mono, monospace" font-size="16">
+<text x="24" y="48" fill="#00afff" font-weight="700" xml:space="preserve">SYSTEM FETCH</text>
+<text x="144" y="48" fill="#d8dee9" xml:space="preserve">  </text>
+<text x="164" y="48" fill="#8a8a8a" xml:space="preserve">LINUX SYSTEM OVERVIEW</text>
+<text x="24" y="69" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<rect x="24" y="74" width="10" height="21" fill="#875fff"/>
+<text x="24" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<rect x="34" y="74" width="110" height="21" fill="#875fff"/>
+<text x="34" y="90" fill="#ffffff" font-weight="700" xml:space="preserve"> PROCESSOR </text>
+<rect x="144" y="74" width="10" height="21" fill="#875fff"/>
+<text x="144" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<text x="154" y="90" fill="#d8dee9" xml:space="preserve">  </text>
+<text x="174" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> MEMORY </text>
+<text x="254" y="90" fill="#d8dee9" xml:space="preserve">   </text>
+<text x="284" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> PCI </text>
+<text x="334" y="90" fill="#d8dee9" xml:space="preserve">   </text>
+<text x="364" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> USB </text>
+<text x="414" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<text x="24" y="111" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="24" y="132" fill="#ff5faf" font-weight="700" xml:space="preserve">PROCESSOR</text>
+<text x="24" y="153" fill="#00d7af" font-weight="700" xml:space="preserve">Model:</text>
+<text x="84" y="153" fill="#d8dee9" xml:space="preserve"> Example 8-Core Processor</text>
+<text x="24" y="174" fill="#00d7af" font-weight="700" xml:space="preserve">Logical CPUs:</text>
+<text x="154" y="174" fill="#d8dee9" xml:space="preserve"> 16</text>
+<text x="24" y="195" fill="#00d7af" font-weight="700" xml:space="preserve">Physical CPU cores:</text>
+<text x="214" y="195" fill="#d8dee9" xml:space="preserve"> 8</text>
+<text x="24" y="216" fill="#ff5faf" font-weight="700" xml:space="preserve">Load per logical CPU:</text>
+<text x="24" y="237" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 0:</text>
+<text x="104" y="237" fill="#d8dee9" xml:space="preserve"> 18.2%</text>
+<text x="24" y="258" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 1:</text>
+<text x="104" y="258" fill="#d8dee9" xml:space="preserve"> 12.6%</text>
+<text x="24" y="279" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 2:</text>
+<text x="104" y="279" fill="#d8dee9" xml:space="preserve"> 34.1%</text>
+<text x="24" y="300" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 3:</text>
+<text x="104" y="300" fill="#d8dee9" xml:space="preserve"> 21.7%</text>
+<text x="24" y="321" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 4:</text>
+<text x="104" y="321" fill="#d8dee9" xml:space="preserve"> 9.8%</text>
+<text x="24" y="342" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 5:</text>
+<text x="104" y="342" fill="#d8dee9" xml:space="preserve"> 15.4%</text>
+<text x="24" y="363" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 6:</text>
+<text x="104" y="363" fill="#d8dee9" xml:space="preserve"> 27.3%</text>
+<text x="24" y="384" fill="#00d7af" font-weight="700" xml:space="preserve">  CPU 7:</text>
+<text x="104" y="384" fill="#d8dee9" xml:space="preserve"> 11.2%</text>
+<text x="24" y="405" fill="#00d7af" font-weight="700" xml:space="preserve">Average across all logical CPUs:</text>
+<text x="344" y="405" fill="#d8dee9" xml:space="preserve"> 18.8%</text>
+<text x="24" y="426" fill="#ff5faf" font-weight="700" xml:space="preserve">Load per physical core:</text>
+<text x="24" y="447" fill="#00d7af" font-weight="700" xml:space="preserve">  Socket 0, core 0:</text>
+<text x="214" y="447" fill="#d8dee9" xml:space="preserve"> 15.4%</text>
+<text x="24" y="468" fill="#00d7af" font-weight="700" xml:space="preserve">  Socket 0, core 1:</text>
+<text x="214" y="468" fill="#d8dee9" xml:space="preserve"> 27.9%</text>
+<text x="24" y="489" fill="#d8dee9" xml:space="preserve">Average across all physical cores: 18.8%</text>
+<text x="24" y="510" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="24" y="531" fill="#8a8a8a" xml:space="preserve"> ←/→ or Tab switch tabs   ↑/↓ scroll   q quit</text>
+<text x="24" y="552" fill="#8a8a8a" xml:space="preserve">Updated 14:32:08</text>
+</g>
+</svg>

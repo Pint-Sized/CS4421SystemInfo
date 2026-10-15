@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1048" height="283" viewBox="0 0 1048 283">
+<rect width="100%" height="100%" rx="16" fill="#10131a"/>
+<rect x="1" y="1" width="1046" height="281" rx="16" fill="none" stroke="#303744"/>
+<circle cx="24" cy="22" r="5" fill="#f7768e"/><circle cx="43" cy="22" r="5" fill="#e0af68"/><circle cx="62" cy="22" r="5" fill="#9ece6a"/>
+<g font-family="DejaVu Sans Mono, monospace" font-size="16">
+<text x="24" y="48" fill="#00afff" font-weight="700" xml:space="preserve">SYSTEM FETCH</text>
+<text x="144" y="48" fill="#d8dee9" xml:space="preserve">  </text>
+<text x="164" y="48" fill="#8a8a8a" xml:space="preserve">LINUX SYSTEM OVERVIEW</text>
+<text x="24" y="69" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="24" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<text x="34" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> PROCESSOR </text>
+<text x="144" y="90" fill="#d8dee9" xml:space="preserve">   </text>
+<text x="174" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> MEMORY </text>
+<text x="254" y="90" fill="#d8dee9" xml:space="preserve">   </text>
+<text x="284" y="90" fill="#8a8a8a" font-weight="700" xml:space="preserve"> PCI </text>
+<text x="334" y="90" fill="#d8dee9" xml:space="preserve">  </text>
+<rect x="354" y="74" width="10" height="21" fill="#875fff"/>
+<text x="354" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<rect x="364" y="74" width="50" height="21" fill="#875fff"/>
+<text x="364" y="90" fill="#ffffff" font-weight="700" xml:space="preserve"> USB </text>
+<rect x="414" y="74" width="10" height="21" fill="#875fff"/>
+<text x="414" y="90" fill="#d8dee9" xml:space="preserve"> </text>
+<text x="24" y="111" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="24" y="132" fill="#ff5faf" font-weight="700" xml:space="preserve">USB</text>
+<text x="24" y="153" fill="#ff5faf" font-weight="700" xml:space="preserve">USB devices (2)</text>
+<text x="24" y="174" fill="#d8dee9" xml:space="preserve">Example Keyboard (0x1209:0x0001)</text>
+<text x="24" y="195" fill="#d8dee9" xml:space="preserve">Example Mouse (0x1209:0x0002)</text>
+<text x="24" y="216" fill="#875fff" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="24" y="237" fill="#8a8a8a" xml:space="preserve"> ←/→ or Tab switch tabs   ↑/↓ scroll   q quit</text>
+<text x="24" y="258" fill="#8a8a8a" xml:space="preserve">Updated 14:32:08</text>
+</g>
+</svg>
