@@ -6,20 +6,20 @@ usage, PCI and USB devices, and resolved hardware names when available.
 
 ## Contents
 
-<div align="center">
-
-**[<kbd>&nbsp;<br>Requirements<br>&nbsp;</kbd>](#requirements)**&nbsp;&nbsp;
-**[<kbd>&nbsp;<br>Quick start<br>&nbsp;</kbd>](#quick-start)**&nbsp;&nbsp;
-**[<kbd>&nbsp;<br>Screenshots<br>&nbsp;</kbd>](#screenshots)**
-
-**[<kbd>&nbsp;<br>Plain-text output<br>&nbsp;</kbd>](#plain-text-output)**&nbsp;&nbsp;
-**[<kbd>&nbsp;<br>TUI controls and refresh<br>&nbsp;</kbd>](#tui-controls-and-refresh)**&nbsp;&nbsp;
-**[<kbd>&nbsp;<br>JSON export<br>&nbsp;</kbd>](#json-export)**
-
-**[<kbd>&nbsp;<br>Hardware names and platform limitations<br>&nbsp;</kbd>](#hardware-names-and-platform-limitations)**&nbsp;&nbsp;
-**[<kbd>&nbsp;<br>Troubleshooting<br>&nbsp;</kbd>](#troubleshooting)**
-
-</div>
+<table width="100%">
+  <tr>
+    <td align="center" width="25%"><a href="#requirements"><kbd>Requirements</kbd></a></td>
+    <td align="center" width="25%"><a href="#quick-start"><kbd>Quick start</kbd></a></td>
+    <td align="center" width="25%"><a href="#screenshots"><kbd>Screenshots</kbd></a></td>
+    <td align="center" width="25%"><a href="#plain-text-output"><kbd>Plain-text output</kbd></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="25%"><a href="#tui-controls-and-refresh"><kbd>TUI controls</kbd></a></td>
+    <td align="center" width="25%"><a href="#json-export"><kbd>JSON export</kbd></a></td>
+    <td align="center" width="25%"><a href="#hardware-names-and-platform-limitations"><kbd>Hardware &amp; platform</kbd></a></td>
+    <td align="center" width="25%"><a href="#troubleshooting"><kbd>Troubleshooting</kbd></a></td>
+  </tr>
+</table>
 
 ## Requirements
 
