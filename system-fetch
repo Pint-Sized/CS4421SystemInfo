@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$project_dir"
+
+echo "Loading system information..."
+
+mvn -q -DskipTests compile dependency:build-classpath \
+    -Dmdep.outputFile=target/system-fetch-classpath.txt
+
+classpath="target/classes:$(<target/system-fetch-classpath.txt)"
+exec java -cp "$classpath" SystemFetch "$@"

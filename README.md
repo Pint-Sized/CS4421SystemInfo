@@ -16,7 +16,7 @@ Use `--plain` to request a one-time plain-text report even in an interactive
 terminal:
 
 ```sh
-mvn compile exec:java -Dexec.args="--plain"
+./system-fetch --plain
 ```
 
 The interactive view refreshes processor load, memory usage, PCI devices, and
@@ -33,20 +33,29 @@ and JSON serialization with atomic file replacement (`JsonSnapshotWriter`).
 Install Java 21 and Maven, then build and run from the project directory:
 
 ```sh
-mvn compile exec:java
+mvn compile
+./system-fetch
+```
+
+The executable project-local launcher compiles the application if needed,
+resolves its runtime dependencies, and forwards command-line arguments:
+
+```sh
+./system-fetch --plain
+./system-fetch --plain --json-file "./system info.json"
 ```
 
 To export snapshots for another program or a future web GUI, pass a JSON file
 path:
 
 ```sh
-mvn compile exec:java -Dexec.args="--json-file ./system-info.json"
+./system-fetch --json-file ./system-info.json
 ```
 
 The plain-text and JSON export options can be used together:
 
 ```sh
-mvn compile exec:java -Dexec.args="--plain --json-file ./system-info.json"
+./system-fetch --plain --json-file ./system-info.json
 ```
 
 While the interactive TUI is running, this file is replaced with a fresh,
