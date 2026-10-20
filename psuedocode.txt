@@ -1,0 +1,30 @@
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+
+
+
+public class HardwareLogger {
+    
+    //This is the logpath, change the path/filename to something else if it is what you preffer
+    private final Path logFile =
+            Path.of("hardware-history", "hardware-history.csv");
+    
+
+    //IOException is when data is unable to be transferred successfully
+    public void appendRecord(insert data variables here) throws IOException {
+
+        // Create the directory if it does not exist.
+        Files.createDirectories(logFile.getParent());
+
+        // Create the file if missing; otherwise append.
+        Files.writeString(
+                logFile,
+                data + System.lineSeparator(),
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+        );
+    }
+}
