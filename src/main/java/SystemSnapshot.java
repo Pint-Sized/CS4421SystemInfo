@@ -6,7 +6,8 @@ record SystemSnapshot(
     SystemSnapshot.Processor processor,
     SystemSnapshot.Memory memory,
     List<SystemSnapshot.PciDevice> pci,
-    List<SystemSnapshot.UsbDevice> usb
+    List<SystemSnapshot.UsbDevice> usb,
+    List<SystemSnapshot.Disk> disks
 ) {
 
     /* Cumulative Linux CPU counters used to calculate utilization deltas. */
@@ -48,6 +49,18 @@ record SystemSnapshot(
 
     /* One USB device and its vendor/product IDs and resolved names. */
     record UsbDevice(int vendor, int id, String vendorName, String name) {}
+
+    /* One mounted filesystem */
+    record Disk(
+	String Device,
+	String mountPoint,
+	String fsType,
+	Long totalBytes,
+	Long usedBytes,
+	Long availableBytes,
+	Double usedPercent,
+	String note
+     ) {}
 
     /* Snapshot plus CPU counters retained as the baseline for the next refresh. */
     record CollectionResult(
