@@ -24,9 +24,9 @@ public class HardwareLogger {
 
          int logicalCpus = data.processor().logicalCpus();
         //memory Total
-         double memoryTotal = data.memory().totalKiB();
+         long memoryTotal = data.memory().totalKiB();
         //memory Used
-         double memoryUsed = data.memory().usedKiB();
+         long memoryUsed = data.memory().usedKiB();
         //cpu model
         String cpuModel = data.processor().model();
         //pci total

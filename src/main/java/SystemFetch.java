@@ -404,7 +404,8 @@ public class SystemFetch implements Model {
     /* Starts first collection in the command executor, never on the UI thread. */
     @Override
     public Command init() {
-        return refreshCommand(previousCpuTimes);
+        //logHardwareRecord is set to true so that the initial snapshot is logged
+        return refreshCommand(previousCpuTimes, true);
     }
 
     /* Handles terminal resizing, tab navigation, scrolling, and quit input. */
@@ -435,7 +436,8 @@ public class SystemFetch implements Model {
         }
         if (message instanceof RefreshTick) {
             refreshStatus = "Refreshing...";
-            return UpdateResult.from(this, refreshCommand(previousCpuTimes));
+            //logHardwareRecord set to false so that the csv file is not constantly updates upon each refresh
+            return UpdateResult.from(this, refreshCommand(previousCpuTimes, false));
         }
         if (message instanceof WindowSizeMessage size) {
             terminalWidth = Math.max(1, size.width());
@@ -548,12 +550,17 @@ public class SystemFetch implements Model {
 
     /* Collects a snapshot in the command executor and reports failures to the UI. */
     private Command refreshCommand(
-        Map<Integer, SystemSnapshot.CpuTicks> previousTimes
+        Map<Integer, SystemSnapshot.CpuTicks> previousTimes,
+        boolean logHardwareRecord
     ) {
         return () -> {
             Snapshot snapshot;
             try {
                 snapshot = createReport(collector.collect(previousTimes));
+                //Where appendRecord is called, this information takes the snapshot data and appends it to hardware-history.csv. See HardwareLogger file.
+                 if (logHardwareRecord) {
+                    new HardwareLogger().appendRecord(snapshot.data());
+                }
             } catch (IOException | RuntimeException e) {
                 String error = e.getMessage();
                 return new RefreshMessage(
@@ -572,6 +579,7 @@ public class SystemFetch implements Model {
                     );
                 }
             }
+            
             return new RefreshMessage(snapshot, null);
         };
     }
