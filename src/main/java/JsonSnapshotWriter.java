@@ -125,6 +125,31 @@ final class JsonSnapshotWriter {
                 .append('}');
         }
         appendArrayClose(json, snapshot.usb());
+
+        json.append(",\n \"disks\": [");
+        for (int i =0; i < snapshot.disks().size(); i++) {
+            SystemSnapshot.Disk disk = snapshot.disks().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n     {\"device\": ")
+                .append(jsonString(disk.device()))
+                .append(", \"mount_point\": ")
+                .append(jsonString(disk.mountPoint()))
+                .append(", \"type\": ")
+                .append(jsonString(disk.fsType()))
+                .append(", \"total_bytes\": ")
+                .append(jsonNullable(disk.totalBytes()))
+                .append(", \"used_bytes\": ")
+                .append(jsonNullable(disk.usedBytes()))
+                .append(", \"available_bytes\": ")
+                .append(jsonNullable(disk.availableBytes()))
+                .append(", \"used_percent\": ")
+                .append(jsonNullable(disk.usedPercent()))
+                .append(", \"note\": ")
+                .append(disk.note() == null ? "null" : jsonString(disk.note()))
+                .append('}');
+            }
+            appendArrayClose(json, snapshot.disks());
+
         return json.append("\n}\n").toString();
     }
 
@@ -137,6 +162,17 @@ final class JsonSnapshotWriter {
     /* JSON has no representation for a not-yet-available measurement. */
     private static String jsonNumber(Double number) {
         return number == null ? "null" : number.toString();
+    }
+
+    /* Writes a number as JSON, or "null" when it is missing or not a real number*/
+    private static String jsonNullable(Number number) {
+        if (number == null) {
+            return "null";            
+        }    
+        if (number instanceof Double d && (d.isNaN() || d.isInfinite())) {
+            return "null";            
+        }
+        return number.toString();
     }
 
     /* Formats hardware IDs as four-digit hexadecimal strings. */
