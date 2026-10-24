@@ -52,7 +52,7 @@ record SystemSnapshot(
 
     /* One mounted filesystem */
     record Disk(
-	String Device,
+	String device,
 	String mountPoint,
 	String fsType,
 	Long totalBytes,

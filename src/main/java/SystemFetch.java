@@ -31,6 +31,7 @@ public class SystemFetch implements Model {
         "Memory",
         "PCI",
         "USB",
+        "Disk",
     };
     /* Below these dimensions the tab rail and report cannot be read reliably. */
     private static final int MIN_TERMINAL_WIDTH = 40;
@@ -195,7 +196,8 @@ public class SystemFetch implements Model {
                 "Collecting processor information...",
                 "Collecting memory information...",
                 "Collecting PCI devices...",
-                "Collecting USB devices..."
+                "Collecting USB devices...",
+                "Collecting Disk information..."
             )
         );
     }
@@ -210,7 +212,8 @@ public class SystemFetch implements Model {
                 processorInfo(data.processor()),
                 memoryInfo(data.memory()),
                 pciInfo(data.pci()),
-                usbInfo(data.usb())
+                usbInfo(data.usb()),
+                diskInfo(data.disks())
             ),
             collection
         );
@@ -339,6 +342,58 @@ public class SystemFetch implements Model {
         }
         return output.toString();
     }
+
+    /* builds the disk tab with one block per mounted filesystem */
+    private static String diskInfo(List<SystemSnapshot.Disk> disks) {
+        StringBuilder output = new StringBuilder();
+        output.append("Mounted filesystems: ").append(disks.size()).append('\n');
+        
+        if (disks.isEmpty()) {
+            output.append("No filesystems to display.\n");
+        }
+
+        for (SystemSnapshot.Disk d : disks) {
+            output.append('\n');
+            output.append("Mount: ").append(cleanText(d.mountPoint())).append('\n');    
+            output.append(" Device: ").append(cleanText(d.device())).append('\n');    
+            output.append(" Type: ").append(d.fsType()).append('\n');
+
+            if (d.totalBytes() == null) {
+                /* mount exists but size is unknown */
+                output.append(" Usage: unavailable (").append(d.note()).append(")\n");
+            }
+            else {
+                output.append(" Total: ").append(formatBytes(d.totalBytes())).append('\n');
+                output.append(" Used: ").append(formatBytes(d.usedBytes()));
+                output.append(String.format(Locale.ROOT, " (%.1f%%)", d.usedPercent()));
+                output.append('\n');
+                output.append(" Available: ").append(formatBytes(d.availableBytes())).append('\n');
+
+                }    
+            }        
+            return output.toString();
+        }
+
+        /* replaces control characters with "?". */
+        private static String cleanText(String text) {
+            return text.replaceAll("\\p{Cntrl}","?");
+        }
+
+        /* converts bytecount into more readable units */
+        private static String formatBytes(long bytes) {
+            String[] units = {"B" , "KiB" , "MiB", "GiB" ,"TiB" , "PiB" };
+            double value = bytes;
+            int unit = 0;
+            while (value >= 1024 && unit < units.length -1) {
+                value = value / 1024;
+                unit = unit + 1;
+            }
+            if (unit == 0) {
+              return bytes + "B";           
+            }
+            return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
+        }
+
 
     /* Appends PCI vendor counts and both requested orderings to the PCI tab. */
     private static void appendPciAnalysis(
@@ -503,7 +558,7 @@ public class SystemFetch implements Model {
             .append('\n');
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
         // Short labels keep the complete tab row readable in narrower terminals.
-        String[] shortTabs = { "CPU", "RAM", "PCI", "USB" };
+        String[] shortTabs = { "CPU", "RAM", "PCI", "USB", "DSK" };
         for (int i = 0; i < TABS.length; i++) {
             String tab =
                 terminalWidth < 64
