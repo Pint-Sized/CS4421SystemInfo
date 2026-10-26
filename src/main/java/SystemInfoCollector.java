@@ -5,6 +5,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.FileStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,7 +16,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
-
 /* Reads Linux procfs/sysfs data and derives the structured system snapshot. */
 final class SystemInfoCollector {
 
@@ -110,8 +110,9 @@ final class SystemInfoCollector {
         SystemSnapshot.Memory memory = memorySnapshot();
         List<SystemSnapshot.PciDevice> pci = readPci(pciNames);
         List<SystemSnapshot.UsbDevice> usb = readUsb(usbNames);
-        return new SystemSnapshot.CollectionResult(
-            new SystemSnapshot(processor, memory, pci, usb),
+        List<SystemSnapshot.Disk> disks = readDisks();
+	 return new SystemSnapshot.CollectionResult(
+            new SystemSnapshot(processor, memory, pci, usb, disks),
             currentCpuTimes
         );
     }
@@ -377,6 +378,112 @@ final class SystemInfoCollector {
         }
         return devices;
     }
+
+    /* hides filesystems that are not real storage */
+    private static final List<String> PSEUDO_TYPES = List.of(
+	"proc", "sysfs", "devtmpfs" , "devpts" , "cgroup", "cgroup2",
+	 "securityfs", "debugfs", "tracefs", "configfs", "fusectl",
+	 "pstore", "bpf", "mqueue", "hugetlbfs", "autofs", "binfmt_misc",
+	"rpc_pipefs", "nsfs", "efivarfs", "squashfs"
+    );
+
+    /* Reads mounted file systems and their sizes. */
+    private static List<SystemSnapshot.Disk> readDisks() {
+	List<String> lines;
+	try {
+	      lines = Files.readAllLines(Path.of("/proc/self/mounts"));
+	}
+	catch (IOException e) {
+           return new ArrayList<>(); // shows nothing if file cant be read
+	}
+
+	List<SystemSnapshot.Disk> result = new ArrayList<>();
+	Set<String> seenDevices = new HashSet<>();
+
+	for (String line : lines) {
+		/* (from proc/self/mounts) */
+		String[] fields = line.split(" ");
+		if (fields.length < 3) {
+			continue; // skips lines with invalid formatting
+		}
+		String device = decodeMountText(fields[0]);
+		String mountPoint = decodeMountText(fields[1]);
+		String type = fields[2]; 
+
+		if (isPseudo(type, mountPoint)) {
+			continue;
+		}
+
+		/*show each real device once */
+		if (device.startsWith("/")) {
+			if (seenDevices.contains(device)){
+				continue;
+			}
+			seenDevices.add(device);
+		}
+
+		SystemSnapshot.Disk disk = readDiskUsage(device, mountPoint, type);
+		if (disk != null) {
+			result.add(disk);
+		}
+	}
+	return result;
+   }
+
+   private static boolean isPseudo(String type, String mountPoint) {
+	if (PSEUDO_TYPES.contains(type)) {
+		return true;
+         }
+
+	/* tmpfs lives in RAM. Hide it under system folders, keep it elsewhere ( like /tmp) */
+
+	if (type.equals("tmpfs")) {
+		return mountPoint.startsWith ("/run")
+			|| mountPoint.startsWith("/dev")
+			|| mountPoint.startsWith("/sys")
+			|| mountPoint.startsWith("/proc");
+	}
+	return false;
+   }
+
+   /* get size of one mounted file system */
+   private static SystemSnapshot.Disk readDiskUsage(
+	String device,
+	String mountPoint,
+	String type
+   ) {
+	try {
+		FileStore store = Files.getFileStore(Path.of(mountPoint));
+		long total = store.getTotalSpace();
+		if (total <= 0) {
+			return null; //no size, dont show it
+		}
+		long used = total - store.getUnallocatedSpace();
+		long available =  store.getUsableSpace();
+		double percent = used * 100.0 / (used + available) ;
+		return new SystemSnapshot.Disk(
+			device, mountPoint, type, total, used, available, percent, null
+		);
+       	     }
+	catch (IOException | RuntimeException e) {
+		/* still list it but mention it couldnt be read */
+		return new SystemSnapshot.Disk(
+			device, mountPoint, type, null, null, null, null, "not accessible" 
+		);
+	     }
+	  }
+
+	/* Linux writes special characters in mount paths as codes. Turn them back. */
+	private static String decodeMountText(String text) {
+		return text
+			.replace("\\040", " ")  //space
+			.replace("\\011", "\t ")  //tab
+			.replace("\\012", "\n ")  //newline
+			.replace("\\134", "\\");  //backslash
+	}
+
+
+
 
     /* Reads sysfs hexadecimal attributes such as vendor and product IDs. */
     private static int readHex(Path path) throws IOException {

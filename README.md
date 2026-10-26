@@ -61,6 +61,10 @@ and are not read from a user's machine.
 
 ![System Fetch USB tab](docs/images/usb.svg)
 
+### Disk 
+
+![System Fetch Disk tab](docs/images/disk.svg)
+
 ## Plain-text output
 
 Use `--plain` to print a one-time report and exit, including when running from
