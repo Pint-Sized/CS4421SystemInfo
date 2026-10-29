@@ -2,7 +2,8 @@
 
 System Fetch is a Java 21 command-line system information tool for Linux. It
 reports processor model, logical and physical CPU counts and load, memory
-usage, PCI and USB devices, and resolved hardware names when available.
+usage, PCI and USB devices, mounted filesystems, battery charge, temperature
+and fan readings, and resolved hardware names when available.
 
 ## Contents
 
@@ -42,8 +43,8 @@ plain-text report instead.
 
 ## Screenshots
 
-Screenshots below show the four TUI tabs. Values are representative examples
-and are not read from a user's machine.
+Screenshots below show representative TUI tabs. Values are examples and are not
+read from a user's machine.
 
 ### Processor
 
@@ -61,9 +62,17 @@ and are not read from a user's machine.
 
 ![System Fetch USB tab](docs/images/usb.svg)
 
-### Disk 
+### Disk
 
 ![System Fetch Disk tab](docs/images/disk.svg)
+
+### Battery & Sensors
+
+![System Fetch Battery and Sensors tab](docs/images/battery-sensors.svg)
+
+The Battery & Sensors tab lists available battery charge/status, temperatures,
+and fan speeds. Sensors or batteries that are not exposed by the system are
+reported as unavailable or absent.
 
 ## Plain-text output
 
@@ -76,14 +85,16 @@ an interactive terminal:
 
 ## TUI controls and refresh
 
-The TUI has Processor, Memory, PCI, and USB tabs. System information refreshes
-every two seconds. Collection runs in the background so tab navigation and
-scrolling remain responsive. If a refresh fails, the last successful data
-remains visible and the status line reports the error.
+The TUI has six tabs: Processor, Memory, PCI, USB, Disk, and Battery & Sensors.
+System information refreshes every two seconds. Collection runs in the
+background so tab navigation and scrolling remain responsive. If a refresh
+fails, the last successful data remains visible and the status line reports the
+error.
 
-- Left/right arrows or Tab: change tabs
-- Up/down arrows: scroll
+- Left/right arrows, `h`/`l`, or Tab: change tabs
+- Up/down arrows or `j`/`k`: scroll
 - Page Up/Page Down: scroll by a page
+- `Ctrl+U`/`Ctrl+D`: scroll by a page
 - Home/End: jump to the start/end
 - `q` or Escape: quit
 
@@ -120,7 +131,10 @@ Combine plain-text output and JSON export:
 ```
 
 The JSON document has a `schema_version` and UTC `generated_at` timestamp, plus
-processor, memory, PCI-device, and USB-device data. For example:
+processor, memory, PCI-device, USB-device, disk, battery, and sensor data. Disk
+size fields may be `null` when the mount exists but its usage could not be read.
+Battery charge/status and sensor values may also be `null` when the system does
+not expose them. For example:
 
 ```json
 {
@@ -165,6 +179,34 @@ processor, memory, PCI-device, and USB-device data. For example:
       "product_id": "0x0001",
       "vendor_name": "Example Vendor",
       "name": "Example USB Device"
+    }
+  ],
+  "disks": [
+    {
+      "device": "/dev/example",
+      "mount_point": "/",
+      "type": "ext4",
+      "total_bytes": 1000000000,
+      "used_bytes": 400000000,
+      "available_bytes": 600000000,
+      "used_percent": 40.0,
+      "note": null
+    }
+  ],
+  "batteries": [
+    {
+      "name": "BAT0",
+      "charge_percent": 85,
+      "status": "Discharging"
+    }
+  ],
+  "sensors": [
+    {
+      "chip": "Example sensor",
+      "label": "CPU",
+      "kind": "temperature",
+      "value": 48.0,
+      "unit": "C"
     }
   ]
 }
