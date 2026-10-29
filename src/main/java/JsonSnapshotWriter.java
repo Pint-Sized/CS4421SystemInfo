@@ -10,11 +10,13 @@ import java.util.Locale;
 /* Serializes a system snapshot and atomically replaces the requested JSON file. */
 final class JsonSnapshotWriter {
 
+    /* Utility class; instances do not hold state. */
     private JsonSnapshotWriter() {}
 
     /* Writes beside the target so the final rename stays on the same filesystem. */
     static void writeAtomically(Path target, SystemSnapshot snapshot)
         throws IOException {
+        // The temporary file shares the destination directory for same-filesystem rename.
         Path parent = target.toAbsolutePath().getParent();
         Files.createDirectories(parent);
         Path temporary = Files.createTempFile(parent, ".systemfetch-", ".tmp");
@@ -36,7 +38,7 @@ final class JsonSnapshotWriter {
         }
     }
 
-    /* Builds the versioned JSON document without an external serialization dependency. */
+    /* Serializes each snapshot section in the documented, stable schema order. */
     private static String toJson(SystemSnapshot snapshot) {
         SystemSnapshot.Processor processor = snapshot.processor();
         SystemSnapshot.Memory memory = snapshot.memory();
@@ -44,7 +46,7 @@ final class JsonSnapshotWriter {
         json.append("  \"schema_version\": 1,\n  \"generated_at\": ")
             .append(jsonString(Instant.now().toString()))
             .append(",\n  \"processor\": {\n");
-        // Keep the schema's section order stable for predictable downstream readers.
+        // Keep processor properties ordered consistently for readers and diffs.
         json.append("    \"model\": ").append(jsonString(processor.model())).append(",\n");
         json.append("    \"logical_cpus\": ").append(processor.logicalCpus()).append(",\n");
         json.append("    \"physical_cores\": ")
@@ -54,6 +56,7 @@ final class JsonSnapshotWriter {
             .append(",\n    \"physical_topology_complete\": ")
             .append(processor.topologyComplete())
             .append(",\n    \"logical_cpu_load_percent\": [");
+        // Emit one utilization object for each sampled logical CPU.
         for (int i = 0; i < processor.logicalLoads().size(); i++) {
             SystemSnapshot.CpuLoad load = processor.logicalLoads().get(i);
             if (i > 0) json.append(',');
@@ -67,6 +70,7 @@ final class JsonSnapshotWriter {
         json.append(",\n    \"average_logical_load_percent\": ")
             .append(jsonNumber(processor.averageLogicalLoad()))
             .append(",\n    \"physical_core_load_percent\": [");
+        // Physical-core values aggregate the logical CPUs mapped to each core.
         for (int i = 0; i < processor.physicalLoads().size(); i++) {
             SystemSnapshot.CoreLoad load = processor.physicalLoads().get(i);
             if (i > 0) json.append(',');
@@ -87,7 +91,8 @@ final class JsonSnapshotWriter {
             .append(",\n    \"used_percent\": ")
             .append(memory.usedPercent())
             .append("\n  },\n  \"pci_devices\": [");
-        // Device IDs stay hexadecimal strings to preserve their conventional notation.
+        // Hardware IDs are strings so hexadecimal notation and leading zeroes survive.
+        // PCI and USB entries keep resolved names alongside the original IDs.
         for (int i = 0; i < snapshot.pci().size(); i++) {
             SystemSnapshot.PciDevice device = snapshot.pci().get(i);
             if (i > 0) json.append(',');
@@ -127,6 +132,7 @@ final class JsonSnapshotWriter {
         appendArrayClose(json, snapshot.usb());
 
         json.append(",\n \"disks\": [");
+        // Nullable usage fields preserve mounts whose capacity could not be read.
         for (int i =0; i < snapshot.disks().size(); i++) {
             SystemSnapshot.Disk disk = snapshot.disks().get(i);
             if (i > 0) json.append(',');
@@ -151,6 +157,7 @@ final class JsonSnapshotWriter {
             appendArrayClose(json, snapshot.disks());
 
         json.append(",\n \"batteries\": [");
+        // Battery charge and status may independently be unavailable.
         for (int i = 0; i < snapshot.batteries().size(); i++) {
             SystemSnapshot.Battery battery = snapshot.batteries().get(i);
             if (i > 0) json.append(',');
@@ -165,6 +172,7 @@ final class JsonSnapshotWriter {
         appendArrayClose(json, snapshot.batteries());
 
         json.append(",\n \"sensors\": [");
+        // Sensor values are nullable when sysfs exposes the sensor but not its reading.
         for (int i = 0; i < snapshot.sensors().size(); i++) {
             SystemSnapshot.Sensor sensor = snapshot.sensors().get(i);
             if (i > 0) json.append(',');
@@ -191,12 +199,12 @@ final class JsonSnapshotWriter {
         json.append(']');
     }
 
-    /* JSON has no representation for a not-yet-available measurement. */
+    /* Emits a numeric value or JSON null for an unavailable average. */
     private static String jsonNumber(Double number) {
         return number == null ? "null" : number.toString();
     }
 
-    /* Writes a number as JSON, or "null" when it is missing or not a real number*/
+    /* Emits finite numbers as JSON numbers; missing and non-finite values become null. */
     private static String jsonNullable(Number number) {
         if (number == null) {
             return "null";            
@@ -212,7 +220,7 @@ final class JsonSnapshotWriter {
         return String.format(Locale.ROOT, "0x%04x", id);
     }
 
-    /* Escapes JSON control characters and quotes in hardware-provided names. */
+    /* Escapes quotes, backslashes, and control characters in JSON string values. */
     private static String jsonString(String value) {
         StringBuilder escaped = new StringBuilder("\"");
         for (int i = 0; i < value.length(); i++) {

@@ -1,7 +1,7 @@
 import java.util.List;
 import java.util.Map;
 
-/* Immutable values shared by the collector, terminal view, and JSON writer. */
+/* Immutable values shared by collection, terminal display, logging, and JSON export. */
 record SystemSnapshot(
     SystemSnapshot.Processor processor,
     SystemSnapshot.Memory memory,
@@ -12,16 +12,16 @@ record SystemSnapshot(
     List<SystemSnapshot.Sensor> sensors
 ) {
 
-    /* Cumulative Linux CPU counters used to calculate utilization deltas. */
+    /* Cumulative busy and idle CPU ticks used to calculate utilization deltas. */
     record CpuTicks(long busy, long idle) {}
 
-    /* Utilization for one logical CPU during the latest sampling interval. */
+    /* Percentage utilization for one logical CPU during the latest sample interval. */
     record CpuLoad(int id, double utilization) {}
 
-    /* Utilization for one physical core, aggregating its logical CPUs. */
+    /* Percentage utilization for one physical core, combining its logical CPUs. */
     record CoreLoad(String name, double utilization) {}
 
-    /* Processor identity, topology availability, and measured CPU loads. */
+    /* Processor identity, CPU counts, topology status, and measured load averages. */
     record Processor(
         String model,
         int logicalCpus,
@@ -34,7 +34,7 @@ record SystemSnapshot(
         Double averagePhysicalLoad
     ) {}
 
-    /* Total and used memory in KiB, with the used percentage. */
+    /* Total and used memory in KiB, with the percentage of total memory in use. */
     record Memory(long totalKiB, long usedKiB, double usedPercent) {}
 
     /* One PCI function and its address, IDs, class, and resolved names. */
@@ -52,7 +52,7 @@ record SystemSnapshot(
     /* One USB device and its vendor/product IDs and resolved names. */
     record UsbDevice(int vendor, int id, String vendorName, String name) {}
 
-    /* One mounted filesystem */
+    /* One mounted filesystem; size and usage fields are null when unavailable. */
     record Disk(
 	String device,
 	String mountPoint,
@@ -64,10 +64,10 @@ record SystemSnapshot(
 	String note
      ) {}
 
-    /* One battery: its name, charge % and state (null if not available). */
+    /* One battery; charge percentage and status may be null when unavailable. */
     record Battery(String name, Integer chargePercent, String status) {}
 
-    /* One temperature (in C) or fan speed (in RPM) reading. */
+    /* One temperature or fan reading; value may be null when it could not be read. */
     record Sensor(String chip, String label, String kind, Double value, String unit) {}
 
     /* Snapshot plus CPU counters retained as the baseline for the next refresh. */

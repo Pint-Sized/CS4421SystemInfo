@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
-/* Reads Linux procfs/sysfs data and derives the structured system snapshot. */
+/* Reads Linux procfs/sysfs data and derives a structured system snapshot. */
 final class SystemInfoCollector {
 
     /* Vendor/product labels used to make PCI and USB IDs human-readable. */
@@ -35,6 +35,7 @@ final class SystemInfoCollector {
     private final Map<Integer, Vendor> pciNames;
     private final Map<Integer, Vendor> usbNames;
 
+    /* Retains the parsed PCI and USB ID databases for subsequent collections. */
     SystemInfoCollector(
         Map<Integer, Vendor> pciNames,
         Map<Integer, Vendor> usbNames
@@ -97,6 +98,7 @@ final class SystemInfoCollector {
         }
     }
 
+    /* Gathers all supported data and returns current CPU counters for the next sample. */
     SystemSnapshot.CollectionResult collect(
         Map<Integer, SystemSnapshot.CpuTicks> previousCpuTimes
     )
@@ -231,7 +233,7 @@ final class SystemInfoCollector {
 
         for (String line : Files.readAllLines(Path.of("/proc/cpuinfo"))) {
             if (line.isBlank()) {
-                // Some architectures omit a final blank separator after the last CPU block.
+                // A blank line ends the current processor block.
                 addCoreMapping(coreByCpu, processor, physicalId, coreId);
                 processor = null;
                 physicalId = null;
@@ -256,6 +258,7 @@ final class SystemInfoCollector {
                 model = value;
             }
         }
+        // Process the final block even when the file has no trailing blank line.
         addCoreMapping(coreByCpu, processor, physicalId, coreId);
 
         if (logicalCpus == 0) {
@@ -383,7 +386,7 @@ final class SystemInfoCollector {
         return devices;
     }
 
-    /* hides filesystems that are not real storage */
+    /* Filesystem types excluded from the disk report as pseudo or image filesystems. */
     private static final List<String> PSEUDO_TYPES = List.of(
 	"proc", "sysfs", "devtmpfs" , "devpts" , "cgroup", "cgroup2",
 	 "securityfs", "debugfs", "tracefs", "configfs", "fusectl",
@@ -391,21 +394,22 @@ final class SystemInfoCollector {
 	"rpc_pipefs", "nsfs", "efivarfs", "squashfs"
     );
 
-    /* Reads mounted file systems and their sizes. */
+    /* Reads mount entries, filters pseudo-filesystems, and gathers usable sizes. */
     private static List<SystemSnapshot.Disk> readDisks() {
 	List<String> lines;
 	try {
 	      lines = Files.readAllLines(Path.of("/proc/self/mounts"));
 	}
 	catch (IOException e) {
-           return new ArrayList<>(); // shows nothing if file cant be read
+           // Mount metadata is unavailable, so no filesystem entries can be reported.
+           return new ArrayList<>();
 	}
 
 	List<SystemSnapshot.Disk> result = new ArrayList<>();
 	Set<String> seenDevices = new HashSet<>();
 
 	for (String line : lines) {
-		/* (from proc/self/mounts) */
+		/* Each line contains device, mount point, filesystem type, and mount options. */
 		String[] fields = line.split(" ");
 		if (fields.length < 3) {
 			continue; // skips lines with invalid formatting
@@ -418,7 +422,7 @@ final class SystemInfoCollector {
 			continue;
 		}
 
-		/*show each real device once */
+		/* Avoid duplicate entries for a device mounted at multiple locations. */
 		if (device.startsWith("/")) {
 			if (seenDevices.contains(device)){
 				continue;
@@ -434,12 +438,13 @@ final class SystemInfoCollector {
 	return result;
    }
 
+   /* Excludes pseudo-filesystems and only hides tmpfs mounts under system paths. */
    private static boolean isPseudo(String type, String mountPoint) {
 	if (PSEUDO_TYPES.contains(type)) {
 		return true;
          }
 
-	/* tmpfs lives in RAM. Hide it under system folders, keep it elsewhere ( like /tmp) */
+	/* tmpfs lives in RAM: hide system mounts, but keep user-visible mounts such as /tmp. */
 
 	if (type.equals("tmpfs")) {
 		return mountPoint.startsWith ("/run")
@@ -450,7 +455,7 @@ final class SystemInfoCollector {
 	return false;
    }
 
-   /* get size of one mounted file system */
+   /* Reads mount capacity; inaccessible mounts remain listed with null size values. */
    private static SystemSnapshot.Disk readDiskUsage(
 	String device,
 	String mountPoint,
@@ -460,7 +465,8 @@ final class SystemInfoCollector {
 		FileStore store = Files.getFileStore(Path.of(mountPoint));
 		long total = store.getTotalSpace();
 		if (total <= 0) {
-			return null; //no size, dont show it
+			// A mount with no reported capacity is omitted from the disk list.
+			return null;
 		}
 		long used = total - store.getUnallocatedSpace();
 		long available =  store.getUsableSpace();
@@ -470,20 +476,20 @@ final class SystemInfoCollector {
 		);
        	     }
 	catch (IOException | RuntimeException e) {
-		/* still list it but mention it couldnt be read */
+		/* Preserve the mount entry and explain that its capacity could not be read. */
 		return new SystemSnapshot.Disk(
 			device, mountPoint, type, null, null, null, null, "not accessible" 
 		);
 	     }
 	  }
 
-	/* Linux writes special characters in mount paths as codes. Turn them back. */
+	/* Decodes the escaped whitespace and backslashes used in /proc/self/mounts. */
 	private static String decodeMountText(String text) {
 		return text
-			.replace("\\040", " ")  //space
-			.replace("\\011", "\t ")  //tab
-			.replace("\\012", "\n ")  //newline
-			.replace("\\134", "\\");  //backslash
+			.replace("\\040", " ")
+			.replace("\\011", "\t ")
+			.replace("\\012", "\n ")
+			.replace("\\134", "\\");
 	}
 
 
@@ -541,7 +547,7 @@ final class SystemInfoCollector {
             String status = readFile(folder, "status"); // e.g. Charging, Discharging, Full
             Integer charge = toInt(readFile(folder, "capacity")); // already a percentage
 
-            // some laptops don't have "capacity", so work it out: now / full * 100
+            // Some batteries omit capacity; estimate it from their energy counters.
             if (charge == null) {
                 Integer now = toInt(readFile(folder, "energy_now"));
                 Integer full = toInt(readFile(folder, "energy_full"));

@@ -4,39 +4,34 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-
-
+/* Appends a compact summary of a system snapshot to the history file. */
 public class HardwareLogger {
-    //This is the logpath, change the path/filename to something else if it is what you preffer
+    /* The history file is created under the working directory when first written. */
     private final Path logFile =
             Path.of("hardware-history", "hardware-history.csv");
 
-    //IOException is when data is unable to be transferred successfully, each parameter in appendRecord() will be appended to the file 
+    /*
+     * Appends a timestamp and selected snapshot values. Despite the .csv suffix,
+     * this legacy format has no field delimiters or CSV escaping.
+     */
     public void appendRecord(SystemSnapshot data) throws IOException {
-        
-       //Timestamp generator, collects the time via "localdatetime" which then is formatted and turned into the "finalTime" variable
+       // Capture local wall-clock time for the history entry.
         LocalDateTime currentTime = LocalDateTime.now();
         DateTimeFormatter formatTime = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
         String finalTime = currentTime.format(formatTime);
 
-        // Create the directory if it does not exist.
+        // Ensure the parent directory exists before opening the log file.
         Files.createDirectories(logFile.getParent());
 
-         int logicalCpus = data.processor().logicalCpus();
-        //memory Total
+        // Select the snapshot values currently recorded by the history logger.
+        int logicalCpus = data.processor().logicalCpus();
          long memoryTotal = data.memory().totalKiB();
-        //memory Used
          long memoryUsed = data.memory().usedKiB();
-        //cpu model
         String cpuModel = data.processor().model();
-        //pci total
         int pciTotal = data.pci().size();
-        //usb total
         int usbTotal = data.usb().size();
-         
 
-
-        // Standard.CREATE will create the file if it is not currently in the directory. Standard.APPEND will append the file based off the parameters in "appendRecord()"
+        // Create the file if absent; otherwise append this concatenated record.
         Files.writeString(
                 logFile,
                 finalTime + logicalCpus + memoryTotal + memoryUsed + cpuModel + pciTotal + usbTotal + System.lineSeparator(),

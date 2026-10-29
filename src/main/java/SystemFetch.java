@@ -20,9 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
-/*
- * Interactive processor, memory, PCI, and USB system information for Linux.
- */
+/* Collects and presents Linux system information in a TUI or plain-text report. */
 public class SystemFetch implements Model {
 
     /* Report sections displayed as tabs in the interactive interface. */
@@ -39,7 +37,7 @@ public class SystemFetch implements Model {
     private static final int MIN_TERMINAL_HEIGHT = 7;
     private static final Duration REFRESH_INTERVAL = Duration.ofSeconds(2);
 
-    /* 256-color Lipgloss styles distinguish the active tab, headings, and labels. */
+    /* Lipgloss styles distinguish the active tab, headings, labels, and help text. */
     private static final Style ACTIVE_TAB = Style.newStyle()
         .foreground(Color.color("15"))
         .background(Color.color("99"))
@@ -121,6 +119,7 @@ public class SystemFetch implements Model {
         return createReport(collector.collect(baseline.cpuTimes()));
     }
 
+    /* Parsed command-line options shared by interactive and plain-text modes. */
     private record Options(Path jsonFile, boolean plainText) {}
 
     /* Parses output options and normalizes the optional JSON export path. */
@@ -148,8 +147,7 @@ public class SystemFetch implements Model {
         return new Options(jsonFile, plainText);
     }
 
-    /* Prints all sections sequentially when a full-screen terminal is unavailable. */
-    /* Prints each report section in tab order for non-interactive use. */
+    /* Prints each report section in tab order when the TUI is not used. */
     private static void printPlainReport(List<String> sections) {
         for (int i = 0; i < sections.size(); i++) {
             System.out.println("\n" + TABS[i]);
@@ -157,6 +155,7 @@ public class SystemFetch implements Model {
         }
     }
 
+    /* One rendered report paired with the collection result used to produce it. */
     private record Snapshot(
         List<String> sections,
         SystemSnapshot.CollectionResult collection
@@ -167,14 +166,16 @@ public class SystemFetch implements Model {
         }
     }
 
+    /* Delivers collected report data and any error raised during its refresh. */
     private record RefreshMessage(
         Snapshot snapshot,
         String error
     ) implements Message {}
 
+    /* Timer message that starts the next periodic collection. */
     private record RefreshTick() implements Message {}
 
-    /* Current report content and terminal navigation state. */
+    /* Current report content, collection dependencies, and terminal navigation state. */
     private final List<String> sections;
     private final SystemInfoCollector collector;
     private final Path jsonFile;
@@ -346,57 +347,54 @@ public class SystemFetch implements Model {
         return output.toString();
     }
 
-    /* builds the disk tab with one block per mounted filesystem */
+    /* Builds the disk tab with one block per mounted filesystem. */
     private static String diskInfo(List<SystemSnapshot.Disk> disks) {
         StringBuilder output = new StringBuilder();
         output.append("Mounted filesystems: ").append(disks.size()).append('\n');
-        
+
         if (disks.isEmpty()) {
             output.append("No filesystems to display.\n");
         }
 
         for (SystemSnapshot.Disk d : disks) {
             output.append('\n');
-            output.append("Mount: ").append(cleanText(d.mountPoint())).append('\n');    
-            output.append(" Device: ").append(cleanText(d.device())).append('\n');    
+            output.append("Mount: ").append(cleanText(d.mountPoint())).append('\n');
+            output.append(" Device: ").append(cleanText(d.device())).append('\n');
             output.append(" Type: ").append(d.fsType()).append('\n');
 
             if (d.totalBytes() == null) {
-                /* mount exists but size is unknown */
+                /* Keep the mount visible while explaining why its size is unavailable. */
                 output.append(" Usage: unavailable (").append(d.note()).append(")\n");
-            }
-            else {
+            } else {
                 output.append(" Total: ").append(formatBytes(d.totalBytes())).append('\n');
                 output.append(" Used: ").append(formatBytes(d.usedBytes()));
                 output.append(String.format(Locale.ROOT, " (%.1f%%)", d.usedPercent()));
                 output.append('\n');
                 output.append(" Available: ").append(formatBytes(d.availableBytes())).append('\n');
-
-                }    
-            }        
-            return output.toString();
-        }
-
-        /* replaces control characters with "?". */
-        private static String cleanText(String text) {
-            return text.replaceAll("\\p{Cntrl}","?");
-        }
-
-        /* converts bytecount into more readable units */
-        private static String formatBytes(long bytes) {
-            String[] units = {"B" , "KiB" , "MiB", "GiB" ,"TiB" , "PiB" };
-            double value = bytes;
-            int unit = 0;
-            while (value >= 1024 && unit < units.length -1) {
-                value = value / 1024;
-                unit = unit + 1;
             }
-            if (unit == 0) {
-              return bytes + "B";           
-            }
-            return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
         }
+        return output.toString();
+    }
 
+    /* Replaces control characters so device and mount names cannot disrupt the report. */
+    private static String cleanText(String text) {
+        return text.replaceAll("\\p{Cntrl}", "?");
+    }
+
+    /* Converts a byte count to a readable binary unit. */
+    private static String formatBytes(long bytes) {
+        String[] units = {"B", "KiB", "MiB", "GiB", "TiB", "PiB"};
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+            value = value / 1024;
+            unit = unit + 1;
+        }
+        if (unit == 0) {
+            return bytes + "B";
+        }
+        return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
+    }
 
     /* Builds the Battery & Sensors tab. */
     private static String batterySensorInfo(
@@ -405,7 +403,7 @@ public class SystemFetch implements Model {
     ) {
         StringBuilder output = new StringBuilder();
 
-        // batteries
+        // Battery status and charge can each be unavailable independently.
         output.append("Batteries: ").append(batteries.size()).append('\n');
         if (batteries.isEmpty()) {
             output.append(" No battery found (normal for desktops, VMs and servers)\n");
@@ -417,7 +415,7 @@ public class SystemFetch implements Model {
                 .append(charge).append(", ").append(state).append('\n');
         }
 
-        // temperatures and fans
+        // Display temperature and fan groups separately, including empty states.
         output.append("\nTemperatures:\n");
         int temps = addSensors(output, sensors, "temperature");
         if (temps == 0) {
@@ -520,7 +518,7 @@ public class SystemFetch implements Model {
     /* Starts first collection in the command executor, never on the UI thread. */
     @Override
     public Command init() {
-        //logHardwareRecord is set to true so that the initial snapshot is logged
+        // Record the initial snapshot once; later refreshes do not add history rows.
         return refreshCommand(previousCpuTimes, true);
     }
 
@@ -528,6 +526,7 @@ public class SystemFetch implements Model {
     @Override
     public UpdateResult<? extends Model> update(Message message) {
         if (message instanceof RefreshMessage refresh) {
+            // Replace displayed data only when collection produced a complete snapshot.
             if (refresh.snapshot() != null) {
                 sections.clear();
                 sections.addAll(refresh.snapshot().sections());
@@ -552,10 +551,11 @@ public class SystemFetch implements Model {
         }
         if (message instanceof RefreshTick) {
             refreshStatus = "Refreshing...";
-            //logHardwareRecord set to false so that the csv file is not constantly updates upon each refresh
+            // Periodic refreshes update the display and JSON export, not the history log.
             return UpdateResult.from(this, refreshCommand(previousCpuTimes, false));
         }
         if (message instanceof WindowSizeMessage size) {
+            // Update the viewport and clamp scrolling to the resized content.
             terminalWidth = Math.max(1, size.width());
             terminalHeight = Math.max(1, size.height());
             scroll = Math.min(scroll, maxScroll());
@@ -565,6 +565,7 @@ public class SystemFetch implements Model {
             return UpdateResult.from(this);
         }
 
+        // Map supported keys to quit, tab selection, and scrolling actions.
         switch (key.key()) {
             case "q", "Q", "esc", "ctrl+c" -> {
                 return UpdateResult.from(this, QuitMessage::new);
@@ -620,7 +621,7 @@ public class SystemFetch implements Model {
             .append(HELP.render("LINUX SYSTEM OVERVIEW"))
             .append('\n');
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
-        // Short labels keep the complete tab row readable in narrower terminals.
+        // Short labels keep the entire tab row readable in narrower terminals.
         String[] shortTabs = { "CPU", "RAM", "PCI", "USB", "DSK", "BAT" };
         for (int i = 0; i < TABS.length; i++) {
             String tab =
@@ -642,7 +643,7 @@ public class SystemFetch implements Model {
             .append('\n');
 
         List<String> lines = wrappedLines();
-        // Reserve rows for the title, tab rail, section heading, dividers, and key help.
+        // Reserve space for the title, tab rail, section heading, dividers, and key help.
         int visibleLines = Math.max(1, terminalHeight - 9);
         int start = Math.min(scroll, Math.max(0, lines.size() - visibleLines));
         int end = Math.min(lines.size(), start + visibleLines);
@@ -669,12 +670,13 @@ public class SystemFetch implements Model {
         Map<Integer, SystemSnapshot.CpuTicks> previousTimes,
         boolean logHardwareRecord
     ) {
+        // Collection and file I/O run as a command so the UI event loop stays responsive.
         return () -> {
             Snapshot snapshot;
             try {
                 snapshot = createReport(collector.collect(previousTimes));
-                //Where appendRecord is called, this information takes the snapshot data and appends it to hardware-history.csv. See HardwareLogger file.
-                 if (logHardwareRecord) {
+                // Add one history entry only for the initial collection.
+                if (logHardwareRecord) {
                     new HardwareLogger().appendRecord(snapshot.data());
                 }
             } catch (IOException | RuntimeException e) {
@@ -756,7 +758,7 @@ public class SystemFetch implements Model {
         List<String> result = new ArrayList<>();
         for (String line : sections.get(selectedTab).split("\\R", -1)) {
             int start = 0;
-            // Count Unicode code points so wrapping does not split a multi-byte character.
+            // Wrap on Unicode code-point boundaries rather than splitting a surrogate pair.
             while (line.codePointCount(start, line.length()) > width) {
                 int end = line.offsetByCodePoints(start, width);
                 result.add(line.substring(start, end));
