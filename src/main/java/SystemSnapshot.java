@@ -7,7 +7,9 @@ record SystemSnapshot(
     SystemSnapshot.Memory memory,
     List<SystemSnapshot.PciDevice> pci,
     List<SystemSnapshot.UsbDevice> usb,
-    List<SystemSnapshot.Disk> disks
+    List<SystemSnapshot.Disk> disks,
+    List<SystemSnapshot.Battery> batteries,
+    List<SystemSnapshot.Sensor> sensors
 ) {
 
     /* Cumulative Linux CPU counters used to calculate utilization deltas. */
@@ -61,6 +63,12 @@ record SystemSnapshot(
 	Double usedPercent,
 	String note
      ) {}
+
+    /* One battery: its name, charge % and state (null if not available). */
+    record Battery(String name, Integer chargePercent, String status) {}
+
+    /* One temperature (in C) or fan speed (in RPM) reading. */
+    record Sensor(String chip, String label, String kind, Double value, String unit) {}
 
     /* Snapshot plus CPU counters retained as the baseline for the next refresh. */
     record CollectionResult(

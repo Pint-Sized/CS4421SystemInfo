@@ -150,6 +150,38 @@ final class JsonSnapshotWriter {
             }
             appendArrayClose(json, snapshot.disks());
 
+        json.append(",\n \"batteries\": [");
+        for (int i = 0; i < snapshot.batteries().size(); i++) {
+            SystemSnapshot.Battery battery = snapshot.batteries().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n     {\"name\": ")
+                .append(jsonString(battery.name()))
+                .append(", \"charge_percent\": ")
+                .append(jsonNullable(battery.chargePercent()))
+                .append(", \"status\": ")
+                .append(battery.status() == null ? "null" : jsonString(battery.status()))
+                .append('}');
+        }
+        appendArrayClose(json, snapshot.batteries());
+
+        json.append(",\n \"sensors\": [");
+        for (int i = 0; i < snapshot.sensors().size(); i++) {
+            SystemSnapshot.Sensor sensor = snapshot.sensors().get(i);
+            if (i > 0) json.append(',');
+            json.append("\n     {\"chip\": ")
+                .append(jsonString(sensor.chip()))
+                .append(", \"label\": ")
+                .append(jsonString(sensor.label()))
+                .append(", \"kind\": ")
+                .append(jsonString(sensor.kind()))
+                .append(", \"value\": ")
+                .append(jsonNullable(sensor.value()))
+                .append(", \"unit\": ")
+                .append(jsonString(sensor.unit()))
+                .append('}');
+        }
+        appendArrayClose(json, snapshot.sensors());
+
         return json.append("\n}\n").toString();
     }
 
