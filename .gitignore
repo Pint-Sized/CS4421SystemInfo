@@ -2,4 +2,4 @@ data/
 target/
 TODO.md
 system-info.json
-/hardware-history/hardware-history.csv
+hardware-history/
