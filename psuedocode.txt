@@ -1,0 +1,23 @@
+public void appendRecord(String finalTime, parameter, parameter, paramater, parameter) throws IOException {
+
+
+
+       //Pull from the SystemSnapshot file data here via processor().logicalCpus() etc. Maybe along some format like:
+       parameter = processor().logicalCpus() 
+        
+       //Timestamp generator, collects the time via "localdatetime" which then is formatted and turned into the "finalTime" variable
+        LocalDateTime currentTime = LocalDateTime.now();
+        DateTimeFormatter formatTime = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+        finalTime = currentTime.format(formatTime);
+
+        // Create the directory if it does not exist.
+        Files.createDirectories(logFile.getParent());
+
+        // Standard.CREATE will create the file if it is not currently in the directory. Standard.APPEND will append the file based off the parameters in "appendRecord()"
+        Files.writeString(
+                logFile,
+                finalTime + paramater + paramater + paramater + System.lineSeparator(),
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+        );
+    }
