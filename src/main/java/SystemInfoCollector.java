@@ -1,3 +1,4 @@
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -8,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.FileStore;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -111,8 +113,10 @@ final class SystemInfoCollector {
         List<SystemSnapshot.PciDevice> pci = readPci(pciNames);
         List<SystemSnapshot.UsbDevice> usb = readUsb(usbNames);
         List<SystemSnapshot.Disk> disks = readDisks();
-	 return new SystemSnapshot.CollectionResult(
-            new SystemSnapshot(processor, memory, pci, usb, disks),
+        List<SystemSnapshot.Battery> batteries = readBatteries();
+        List<SystemSnapshot.Sensor> sensors = readSensors();
+        return new SystemSnapshot.CollectionResult(
+            new SystemSnapshot(processor, memory, pci, usb, disks, batteries, sensors),
             currentCpuTimes
         );
     }
@@ -512,5 +516,111 @@ final class SystemInfoCollector {
     /* Standardizes IDs for terminal labels and lookup fallbacks. */
     private static String hex(int id) {
         return String.format(Locale.ROOT, "0x%04x", id);
+    }
+
+    /* ---------------- Battery and sensors ---------------- */
+
+    /*
+     * Batteries live in /sys/class/power_supply. Each folder in there is a
+     * power source, and its "type" file says if it is a Battery or a charger.
+     * Desktops, VMs and servers have no battery, so an empty list is normal.
+     */
+    private static List<SystemSnapshot.Battery> readBatteries() {
+        List<SystemSnapshot.Battery> batteries = new ArrayList<>();
+        File[] folders = new File("/sys/class/power_supply").listFiles();
+        if (folders == null) {
+            return batteries; // folder does not exist
+        }
+
+        for (File folder : folders) {
+            String type = readFile(folder, "type");
+            if (type == null || !type.equals("Battery")) {
+                continue; // skip chargers and anything that is not a battery
+            }
+
+            String status = readFile(folder, "status"); // e.g. Charging, Discharging, Full
+            Integer charge = toInt(readFile(folder, "capacity")); // already a percentage
+
+            // some laptops don't have "capacity", so work it out: now / full * 100
+            if (charge == null) {
+                Integer now = toInt(readFile(folder, "energy_now"));
+                Integer full = toInt(readFile(folder, "energy_full"));
+                if (now != null && full != null && full > 0) {
+                    charge = (int) Math.round(now * 100.0 / full);
+                }
+            }
+
+            batteries.add(new SystemSnapshot.Battery(folder.getName(), charge, status));
+        }
+        return batteries;
+    }
+
+    /*
+     * Temperatures and fan speeds live in /sys/class/hwmon. Each hwmon folder
+     * is one sensor chip, and its "name" file says which (e.g. coretemp).
+     * temp1_input, temp2_input... are in thousandths of a degree C.
+     * fan1_input, fan2_input... are in RPM.
+     */
+    private static List<SystemSnapshot.Sensor> readSensors() {
+        List<SystemSnapshot.Sensor> sensors = new ArrayList<>();
+        File[] chips = new File("/sys/class/hwmon").listFiles();
+        if (chips == null) {
+            return sensors; // no sensors on this machine
+        }
+        Arrays.sort(chips); // keep the same order every refresh
+
+        for (File chip : chips) {
+            String chipName = readFile(chip, "name");
+            File[] files = chip.listFiles();
+            if (chipName == null || files == null) {
+                continue;
+            }
+            Arrays.sort(files); // temp1, temp2, temp3... in order
+
+            for (File file : files) {
+                String fileName = file.getName(); // e.g. temp1_input
+                if (!fileName.endsWith("_input")) {
+                    continue;
+                }
+                String start = fileName.replace("_input", ""); // e.g. temp1
+
+                // use the label file if there is one, otherwise just "temp1"
+                String label = readFile(chip, start + "_label");
+                if (label == null) {
+                    label = start;
+                }
+
+                Integer raw = toInt(readFile(chip, fileName)); // null if it can't be read
+                if (fileName.startsWith("temp")) {
+                    Double celsius = (raw == null) ? null : raw / 1000.0;
+                    sensors.add(new SystemSnapshot.Sensor(chipName, label, "temperature", celsius, "C"));
+                } else if (fileName.startsWith("fan")) {
+                    Double rpm = (raw == null) ? null : raw.doubleValue();
+                    sensors.add(new SystemSnapshot.Sensor(chipName, label, "fan", rpm, "RPM"));
+                }
+            }
+        }
+        return sensors;
+    }
+
+    /*
+     * Reads one small file. Returns null if it is missing or can't be read
+     * (e.g. permission denied), so a missing sensor never crashes the program.
+     */
+    private static String readFile(File folder, String name) {
+        try {
+            return Files.readString(new File(folder, name).toPath()).trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /* Turns text like "85" into a number, or null if it isn't a number. */
+    private static Integer toInt(String text) {
+        try {
+            return Integer.parseInt(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

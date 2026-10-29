@@ -32,6 +32,7 @@ public class SystemFetch implements Model {
         "PCI",
         "USB",
         "Disk",
+        "Battery & Sensors",
     };
     /* Below these dimensions the tab rail and report cannot be read reliably. */
     private static final int MIN_TERMINAL_WIDTH = 40;
@@ -197,7 +198,8 @@ public class SystemFetch implements Model {
                 "Collecting memory information...",
                 "Collecting PCI devices...",
                 "Collecting USB devices...",
-                "Collecting Disk information..."
+                "Collecting Disk information...",
+                "Collecting battery and sensor readings..."
             )
         );
     }
@@ -213,7 +215,8 @@ public class SystemFetch implements Model {
                 memoryInfo(data.memory()),
                 pciInfo(data.pci()),
                 usbInfo(data.usb()),
-                diskInfo(data.disks())
+                diskInfo(data.disks()),
+                batterySensorInfo(data.batteries(), data.sensors())
             ),
             collection
         );
@@ -395,6 +398,64 @@ public class SystemFetch implements Model {
         }
 
 
+    /* Builds the Battery & Sensors tab. */
+    private static String batterySensorInfo(
+        List<SystemSnapshot.Battery> batteries,
+        List<SystemSnapshot.Sensor> sensors
+    ) {
+        StringBuilder output = new StringBuilder();
+
+        // batteries
+        output.append("Batteries: ").append(batteries.size()).append('\n');
+        if (batteries.isEmpty()) {
+            output.append(" No battery found (normal for desktops, VMs and servers)\n");
+        }
+        for (SystemSnapshot.Battery b : batteries) {
+            String charge = (b.chargePercent() == null) ? "unavailable" : b.chargePercent() + "%";
+            String state = (b.status() == null) ? "unavailable" : b.status();
+            output.append(" ").append(b.name()).append(": ")
+                .append(charge).append(", ").append(state).append('\n');
+        }
+
+        // temperatures and fans
+        output.append("\nTemperatures:\n");
+        int temps = addSensors(output, sensors, "temperature");
+        if (temps == 0) {
+            output.append(" No temperature sensors on this system\n");
+        }
+
+        output.append("\nFans:\n");
+        int fans = addSensors(output, sensors, "fan");
+        if (fans == 0) {
+            output.append(" No fan sensors on this system\n");
+        }
+
+        return output.toString();
+    }
+
+    /* Adds one line per sensor of the given kind, and returns how many there were. */
+    private static int addSensors(
+        StringBuilder output,
+        List<SystemSnapshot.Sensor> sensors,
+        String kind
+    ) {
+        int count = 0;
+        for (SystemSnapshot.Sensor s : sensors) {
+            if (!s.kind().equals(kind)) {
+                continue;
+            }
+            output.append(" ").append(s.chip()).append(" ").append(s.label()).append(": ");
+            if (s.value() == null) {
+                output.append("unavailable");
+            } else {
+                output.append(Math.round(s.value())).append(" ").append(s.unit());
+            }
+            output.append('\n');
+            count++;
+        }
+        return count;
+    }
+
     /* Appends PCI vendor counts and both requested orderings to the PCI tab. */
     private static void appendPciAnalysis(
         StringBuilder output,
@@ -560,10 +621,10 @@ public class SystemFetch implements Model {
             .append('\n');
         output.append(ACCENT.render("─".repeat(terminalWidth))).append('\n');
         // Short labels keep the complete tab row readable in narrower terminals.
-        String[] shortTabs = { "CPU", "RAM", "PCI", "USB", "DSK" };
+        String[] shortTabs = { "CPU", "RAM", "PCI", "USB", "DSK", "BAT" };
         for (int i = 0; i < TABS.length; i++) {
             String tab =
-                terminalWidth < 64
+                terminalWidth < 84
                     ? shortTabs[i]
                     : TABS[i].toUpperCase(Locale.ROOT);
             output.append(
